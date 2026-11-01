@@ -37,7 +37,7 @@ where
 /// Compares a text with the golden file and points at the first difference.
 pub fn compare(name: &str, actual: &str) {
     let path = golden_dir().join(format!("{name}.txt"));
-    let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e} (the golden files come from the C# harness tools/parity, in the git history up to commit eb9a930)", path.display()));
+    let expected = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e} (the golden files come from the C# harness tools/parity, in the git history up to commit 50dd986)", path.display()));
     if expected == actual {
         return;
     }

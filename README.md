@@ -1315,7 +1315,7 @@ the C# code itself (the last C# version, 1.0.2), through a harness that compiled
 connection, for every install step and tool and their variants (https/http, Cloudflare, a CMS, a re-run ...). The
 Rust steps run the same scenarios against the recording server of `aio-remote` and must produce the same files.
 The same was done for the terminal emulator (27 screen dumps). The harnesses (`tools/parity`, `tools/parity-terminal`) and
-the C# sources they compile are in the git history up to commit `eb9a930`.
+the C# sources they compile are in the git history up to commit `50dd986`.
 
 ### On GitHub
 

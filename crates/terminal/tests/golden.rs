@@ -209,7 +209,7 @@ fn screens_match_csharp() {
     assert!(results.len() >= 25, "only {} scenarios", results.len());
     for (name, actual) in &results {
         let expected = std::fs::read_to_string(golden.join(format!("{name}.txt")))
-            .unwrap_or_else(|e| panic!("{name}: no golden file ({e}); written by tools/parity-terminal, in the git history up to commit eb9a930"));
+            .unwrap_or_else(|e| panic!("{name}: no golden file ({e}); written by tools/parity-terminal, in the git history up to commit 50dd986"));
         if &expected != actual {
             let line = expected.lines().zip(actual.lines()).position(|(a, b)| a != b).unwrap_or(0);
             let out = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("{name}.actual.txt"));

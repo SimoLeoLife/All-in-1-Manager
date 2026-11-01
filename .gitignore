@@ -52,3 +52,10 @@ Thumbs.db
 /configuration/
 **/configuration/keys/
 **/configuration/database/
+
+# Rust build output
+/target/
+
+# The program after source/tools/build.py, with its own configuration/ (keys, passwords, history)
+/public/dev/
+/public/release/

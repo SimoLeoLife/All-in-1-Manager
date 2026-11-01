@@ -226,17 +226,19 @@ mod tests {
     #[test]
     fn picks_the_newest_rust_release_with_our_asset() {
         let releases = vec![
-            release("rust-v2.0.1", true, false),
-            release("rust-v2.2.0", true, false),
-            release("rust-v3.0.0", false, false),
-            release("rust-v4.0.0", true, true),
-            release("v9.0.0", true, false), // the .NET build
+            // Far above this build's version, which goes up with every release.
+            release("rust-v100.0.1", true, false),
+            release("rust-v100.2.0", true, false),
+            release("rust-v300.0.0", false, false),
+            release("rust-v400.0.0", true, true),
+            release("rust-v0.9.0", true, false),
+            release("v900.0.0", true, false), // the .NET build
         ];
         let release = newest(releases).unwrap();
-        assert_eq!(release.version, "2.2.0");
-        // What an update brings: the newer versions only (this build is 2.0.0), newest first.
+        assert_eq!(release.version, "100.2.0");
+        // What an update brings: the versions newer than this build only, newest first.
         let versions: Vec<&str> = release.changes.iter().map(|(v, _)| v.as_str()).collect();
-        assert_eq!(versions, vec!["2.2.0", "2.0.1"]);
+        assert_eq!(versions, vec!["100.2.0", "100.0.1"]);
         assert!(is_newer("99.0.0"));
         assert!(!is_newer(CURRENT_VERSION));
         assert!(!is_newer("0.1.0"));

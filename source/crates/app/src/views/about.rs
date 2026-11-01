@@ -10,10 +10,15 @@ use crate::i18n::{n, t, tf};
 use crate::update;
 
 /// Who made what, in the order they joined in.
-const CREDITS: [(&str, &str); 3] = [
-    ("DuckieTM", n("The installer, and the All-in-1 Converter this look and feel comes from.")),
-    ("Life", n("The branch choice (main / dev) for the clone steps and in Settings, the update check for the hotel's repositories, and the installer's own update at startup.")),
-    ("Simo", n("The Rust port: one program for Windows and Linux, the window in nine languages, and the dry-run mode.")),
+const CREDITS: [(&str, &[&str]); 2] = [
+    ("DuckieTM", &[n("The installer, and the All-in-1 Converter this look and feel comes from.")]),
+    (
+        "Life",
+        &[
+            n("The branch choice (main / dev) for the clone steps and in Settings, the update check for the hotel's repositories, and the installer's own update at startup."),
+            n("The Rust port: one program for Windows and Linux, the window in nine languages, and the dry-run mode."),
+        ],
+    ),
 ];
 
 pub struct AboutView {
@@ -60,7 +65,11 @@ impl View for AboutView {
             for (who, what) in CREDITS {
                 ui.horizontal_top(|ui| {
                     ui.add_sized([110.0, 16.0], egui::Label::new(RichText::new(who).size(12.5).strong()));
-                    widgets::muted(ui, palette, t(what), 12.5);
+                    ui.vertical(|ui| {
+                        for what in what {
+                            widgets::muted(ui, palette, t(what), 12.5);
+                        }
+                    });
                 });
             }
             ui.add_space(12.0);

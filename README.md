@@ -1188,6 +1188,7 @@ backup at the bottom. Without a login the server tools are greyed out, with a **
 
 | Tool | What it does |
 |---|---|
+| **Health check** | one read-only look at the whole server, as green, yellow and red lines: the emulator (and its port 3000), MariaDB, NGINX, PHP-FPM, Docker, Traefik, Fail2Ban and CrowdSec, the hotel site answering on 127.0.0.1:85, disk (yellow from 80 %, red from 90 %), memory, load against the cores, the https certificate (yellow under 21 days, red under 7), the newest database backup in `/var/backups/all-in-1` (yellow when there is none or it is older than 7 days), pending (security) updates, a reboot the system asks for, the firewall and the clock (NTP). A problem has a **Fix** button that runs the matching tool below (Restart emulator, Create full database backup, Update system, Enable firewall, ...), with its usual question and log. The check runs when the page opens and on **Check again**; nothing on the server is changed. See [Health check and History](#health-check-and-history) |
 | **Server status** | opens a page with only the live dashboard (**Back to the tools** at the bottom, or click **Tools** in the sidebar), refreshed every 2 seconds while it is on screen: CPU (with load and cores), memory (and swap), network in/out with a graph that scales between B/s, KB/s and MB/s, uptime, emulator running and players online, disks with how full they are, the users logged in on the server (`who`), and the git branch, commit, date and last change of the emulator, Octane, Octane-Renderer (and AtomCMS), with the emulator's JAR version and the Octane / Renderer package versions. The **Versions** panel also has an **Updates** column: when the page opens (and on **Check for updates**) every clone is fetched and the column says `up to date` or `3 new`, with the newest commit in the tooltip. Everything else is read from `/proc` in one short command per sample; nothing is installed on the server |
 | **Emulator & wired** | a live page about the emulator itself, without changing it: its CPU (% of one core and of the server), JVM memory against `-Xmx`, threads and uptime; the CPU of every wired thread (the coordinator that ticks every 50 ms, shards 0–5 that run the rooms' wired, and the heavy-rooms worker); where the emulator's CPU goes per thread group (wired, game logic, game connections, database, garbage collector, JIT, logging, RCON); and the rooms in the log's `Slow wired task: shard=, room=, took=ms` and "wired tasks waiting" warnings since the last start, with room names, slowest and total time, and the latest warnings. CPU comes from `/proc/<pid>/task/*/stat`; the full thread names from `jcmd Thread.print`, read only when new threads appear (a thread dump briefly pauses the JVM) |
 | **SSH terminal** | a command line on the server in the window, as the Tools login (root with your key): an xterm-compatible terminal (256 colours and truecolor, UTF-8, the alternate screen), so full-screen programs like `nano`, `vim` and `top` work. The terminal follows the window's size, keeps 5,000 lines of scrollback (wheel or Shift+PgUp), and selecting with the mouse + **Ctrl+Shift+C** copies; **Ctrl+Shift+V**, Shift+Insert or the middle button pastes (bracketed, so a pasted script does not run line by line); right-click has Copy / Paste / Select all / Clear scrollback; Ctrl + / − or **A− / A+** change the text size. The session keeps running while you look at other pages; `exit` ends it, **New session** starts another. Under it is the `ssh` command for an SSH client of your own (OpenSSH needs the key in OpenSSH format, PuTTY the `.ppk`) |
@@ -1254,6 +1255,19 @@ password or a damaged file changes nothing.
 ![Emulator & wired](docs/screenshots/emulator-wired.png)
 
 ![SSH terminal](docs/screenshots/tools-terminal.png)
+
+### Health check and History
+
+![Health check](docs/screenshots/health-check.png)
+
+**History** (in the sidebar under TOOLS) keeps every install step and tool you run, with its result and its whole
+log, per server: `configuration/history/<server>/<yyyyMMdd-HHmmss>-<title>.log`, a plain text file with a short
+header (title, step or tool, outcome, start and end) and the log. The page lists the runs newest first with **DONE**,
+**WARNING**, **FAILED** or **ABORTED**; choose **This server**, **All servers** or one server, filter on title,
+result or server, and click a run to read its log. The newest 300 runs per server are kept. Dry runs are not
+recorded.
+
+![History](docs/screenshots/history.png)
 
 ## Updating the installer itself
 

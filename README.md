@@ -66,7 +66,7 @@ so both rows run Update Octane. AtomCMS gets a row of its own once it is install
 ## Quick start
 
 1. Download `all-in-1-installer-windows-x64.exe` or `all-in-1-installer-linux-x64` from the
-   [releases](https://github.com/SimoLeoLife/All-in-1-installer/releases) and start it (on Linux: `chmod +x` first).
+   [releases](https://github.com/duckietm/All-in-1-installer/releases) and start it (on Linux: `chmod +x` first).
 2. Log in to your server: its address, `root` (or a user with sudo) and the password or an SSH key.
 3. **Install New Server** and follow the steps. Each one explains what it does; **Skip** leaves it out.
 4. Optional: a CMS, Gitea, Fail2Ban or CrowdSec under **ADDONS**, then **Deploy Assets** for the game's files.
@@ -88,7 +88,7 @@ To look around first: `all-in-1-installer --dry-run` logs in to nothing and only
 
 **On your computer** (Windows 10/11 x64 or Linux x64): nothing. The installer is one file, with everything it
 needs inside (fonts, the client images for Deploy Assets). Download `all-in-1-installer-windows-x64.exe` or
-`all-in-1-installer-linux-x64` from the [releases](https://github.com/SimoLeoLife/All-in-1-installer/releases), or
+`all-in-1-installer-linux-x64` from the [releases](https://github.com/duckietm/All-in-1-installer/releases), or
 [build it](#building). On Linux it needs a desktop (X11 or Wayland) and OpenGL.
 
 **The server**: a fresh Ubuntu Server (22.04 or newer) or Debian (12 or newer) machine you can reach over SSH as
@@ -1309,7 +1309,7 @@ recorded.
 
 ## Updating the installer itself
 
-The program checks at startup whether a newer release of <https://github.com/SimoLeoLife/All-in-1-installer> is out
+The program checks at startup whether a newer release of <https://github.com/duckietm/All-in-1-installer> is out
 (releases tagged `rust-v<version>`). When there is one, it says what is new and offers **Update and restart**: the
 release file is downloaded next to the running program, the running one is renamed to `<name>.old`, the new one takes
 its place under the same name, and the program starts again. **Later** keeps the version you have; the question comes

@@ -51,6 +51,8 @@ pub enum Page {
     ServerStatus,
     EmulatorMonitor,
     Terminal,
+    Doctor,
+    History,
     Settings,
     About,
 }
@@ -185,6 +187,7 @@ pub struct App {
     explorer: views::asset_explorer::AssetExplorerView,
     sql: views::sql_editor::SqlEditorView,
     debug: views::debug::DebugView,
+    history: views::history::HistoryView,
     about: views::about::AboutView,
     dashboard: views::dashboard::Dashboard,
     /// The connection was lost: the login opens again as soon as nothing runs any more.
@@ -225,6 +228,7 @@ impl App {
             explorer: views::asset_explorer::AssetExplorerView::new(&shared),
             sql: views::sql_editor::SqlEditorView::new(&shared),
             debug: views::debug::DebugView::new(&shared),
+            history: views::history::HistoryView::new(&shared),
             about: views::about::AboutView::new(&shared),
             dashboard: views::dashboard::Dashboard::new(&shared),
             shared,
@@ -307,6 +311,7 @@ impl App {
         self.explorer.session_changed(&shared);
         self.sql.session_changed(&shared);
         self.debug.session_changed(&shared);
+        self.history.session_changed(&shared);
         self.settings.session_changed(&shared);
         self.dashboard.session_changed(&shared);
         // A wizard on screen follows the new login (or the lack of one).
@@ -453,6 +458,7 @@ impl App {
                 },
             ),
             Page::Tools => (t("Tools").into(), t("Restart services, back up and import the database, update, and move your settings.").into()),
+            Page::Doctor => (t("Health check").into(), tf("How {host} is doing: services, disk, certificate, backups, updates.", &[("host", &host)])),
             Page::ServerStatus => (t("Server status").into(), tf("Live figures of {host}, every 2 seconds.", &[("host", &host)])),
             Page::Terminal => (
                 t("SSH terminal").into(),
@@ -465,6 +471,7 @@ impl App {
                 t("Emulator & wired").into(),
                 tf("The emulator on {host}: CPU per thread, the wired engine and slow wired rooms.", &[("host", &host)]),
             ),
+            Page::History => (t("History").into(), t("What ran on which server, with its log: every install step and tool.").into()),
             Page::About => (t("About").into(), "All-in-1 Installer".into()),
             Page::Settings => (t("Settings").into(), t("Your servers and default SSH key, your own SSH keys, and the All-in-1 downloader.").into()),
             Page::Dashboard => (t("Dashboard").into(), t("Set up a complete hotel server over SSH.").into()),
@@ -508,7 +515,7 @@ impl App {
                     Page::Gitea => matches!(current, Page::Gitea | Page::RemoveGitea),
                     Page::Fail2Ban => matches!(current, Page::Fail2Ban | Page::RemoveFail2Ban),
                     Page::CrowdSec => matches!(current, Page::CrowdSec | Page::RemoveCrowdSec),
-                    Page::Tools => matches!(current, Page::Tools | Page::ServerStatus | Page::EmulatorMonitor | Page::Terminal),
+                    Page::Tools => matches!(current, Page::Tools | Page::ServerStatus | Page::EmulatorMonitor | Page::Terminal | Page::Doctor),
                     other => current == other,
                 };
                 let mut nav = |ui: &mut egui::Ui, label: &str, icon: Icon, page: Page| {
@@ -533,7 +540,7 @@ impl App {
                             ("SQL Editor", Icon::Database, Page::SqlEditor),
                         ],
                     ),
-                    ("sidebar:tools", t("TOOLS"), vec![(t("Tools"), Icon::Wrench, Page::Tools), ("Debug", Icon::Bug, Page::Debug)]),
+                    ("sidebar:tools", t("TOOLS"), vec![(t("Tools"), Icon::Wrench, Page::Tools), ("Debug", Icon::Bug, Page::Debug), (t("History"), Icon::History, Page::History)]),
                     ("sidebar:general", t("GENERAL"), vec![(t("Settings"), Icon::Cog, Page::Settings), (t("About"), Icon::Info, Page::About)]),
                 ];
                 for (key, heading, items) in groups {
@@ -611,7 +618,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let wizard_status = match self.page {
-                        Page::Dashboard | Page::Tools | Page::Settings | Page::About | Page::AssetExplorer | Page::SqlEditor | Page::Debug => None,
+                        Page::Dashboard | Page::Tools | Page::Settings | Page::About | Page::AssetExplorer | Page::SqlEditor | Page::Debug | Page::History => None,
                         _ => Some(()),
                     }
                     .and_then(|_| self.wizards.all().into_iter().find(|w| w.is_busy()).map(|w| w.status()))
@@ -688,7 +695,8 @@ impl App {
             Page::AssetExplorer => self.explorer.show(ui, palette, &shared),
             Page::SqlEditor => self.sql.show(ui, palette, &shared),
             Page::Debug => self.debug.show(ui, palette, &shared),
-            Page::Tools | Page::ServerStatus | Page::EmulatorMonitor | Page::Terminal => {
+            Page::History => self.history.show(ui, palette, &shared),
+            Page::Tools | Page::ServerStatus | Page::EmulatorMonitor | Page::Terminal | Page::Doctor => {
                 self.tools.set_page(page);
                 self.tools.show(ui, palette, &shared);
                 self.page = self.tools.page();

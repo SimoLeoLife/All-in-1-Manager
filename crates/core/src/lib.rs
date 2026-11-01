@@ -4,6 +4,7 @@
 pub mod backup;
 pub mod config_dir;
 pub mod credentials;
+pub mod history;
 pub mod keys;
 pub mod layout;
 pub mod settings;

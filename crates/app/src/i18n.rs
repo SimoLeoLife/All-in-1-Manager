@@ -62,6 +62,12 @@ pub fn init(settings: &aio_core::InstallerSettings) {
     set(code.as_deref().unwrap_or("en"));
 }
 
+/// Marks an English text that is translated later with `t(variable)` (a constant table, a match arm), so
+/// tools/i18n_keys.py collects it. Does nothing at run time.
+pub const fn n(english: &'static str) -> &'static str {
+    english
+}
+
 /// The translation of an English UI text (or the text itself).
 pub fn t(english: &str) -> &str {
     let index = CURRENT.load(Ordering::Relaxed);

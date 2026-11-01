@@ -1394,4 +1394,4 @@ source/                          The code
 | | |
 |---|---|
 | **DuckieTM** | The installer, and the [All-in-1 Converter](https://github.com/duckietm/all-in-1-converter) this look and feel comes from. |
-| **Life** | The branch choice (main / dev) for the clone steps and in Settings, the update check for the hotel's repositories, and the installer's own update at startup. |
+| **Life** | The branch choice (main / dev) for the clone steps and in Settings, the update check for the hotel's repositories, and the installer's own update at startup. The Rust port: one program for Windows and Linux, the window in nine languages, and the dry-run mode. |

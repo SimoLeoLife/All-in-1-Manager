@@ -20,7 +20,7 @@ use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
 use crate::i18n::{n, t, tf};
 
-/// The client images of Program/Assets, packed into the binary by build.rs (entries relative to Assets/).
+/// The client images of Assets/, packed into the binary by build.rs (entries relative to Assets/).
 static CLIENT_ASSETS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ClientAssets.zip"));
 
 /// "1.2 GB", "15 MB", "300 KB". (ServerStatusView.Bytes)

@@ -1,4 +1,4 @@
-//! The exe icon and version information on Windows, and the client images of `Program/Assets` packed into the
+//! The exe icon and version information on Windows, and the client images of `Assets` packed into the
 //! binary (Deploy Assets → Images uploads the ones the server is missing), so the program is one file. An `Assets`
 //! folder next to the exe is still read too, for images of your own.
 
@@ -14,7 +14,7 @@ fn main() {
     }
 
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
-    let assets = manifest.join("../../Program/Assets");
+    let assets = manifest.join("../../Assets");
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("ClientAssets.zip");
     println!("cargo:rerun-if-changed={}", assets.display());
 
@@ -24,7 +24,7 @@ fn main() {
     if assets.is_dir() {
         add_dir(&mut zip, &assets, &assets, options);
     } else {
-        println!("cargo:warning=Program/Assets not found; the binary will carry no client images.");
+        println!("cargo:warning=Assets not found; the binary will carry no client images.");
     }
     zip.finish().unwrap();
 }

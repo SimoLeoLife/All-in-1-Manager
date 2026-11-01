@@ -1314,8 +1314,8 @@ tests prove it is the same text, byte for byte: `crates/remote/tests/golden/*.tx
 the C# code itself (the last C# version, 1.0.2), through a harness that compiled its `Remote/*.cs` against a recording
 connection, for every install step and tool and their variants (https/http, Cloudflare, a CMS, a re-run ...). The
 Rust steps run the same scenarios against the recording server of `aio-remote` and must produce the same files.
-The same was done for the terminal emulator (27 screen dumps). The harness lives in the git history (it needs the
-C# sources).
+The same was done for the terminal emulator (27 screen dumps). The harnesses (`tools/parity`, `tools/parity-terminal`) and
+the C# sources they compile are in the git history up to commit `eb9a930`.
 
 ### On GitHub
 
@@ -1335,7 +1335,7 @@ git push origin rust-v2.0.0
 
 ```
 Cargo.toml                       The workspace (version of the program in [workspace.package])
-Program/Assets/                  Client images packed into the program (Deploy Assets → Images)
+Assets/                          Client images packed into the program (Deploy Assets → Images)
 crates/core/                     What lives on this computer
   src/settings.rs                configuration/settings.json: servers, default key, downloader, branches, look, layout, language
   src/layout.rs                  Paths on the server, the emulator's account and the database name, with their checks

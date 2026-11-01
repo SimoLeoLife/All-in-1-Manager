@@ -1,0 +1,96 @@
+//! Debug aid: `AIO_SCREENSHOT=<file.png>` (or `HABBO_SCREENSHOT`, as in the converter) saves one screenshot of the
+//! window and closes it. `AIO_SCREENSHOT_PAGE` picks the page (dashboard, install, cms, gitea, fail2ban, crowdsec,
+//! deploy, explorer, sql, debug, tools, status, monitor, terminal, settings, about, login); `AIO_SCREENSHOT_THEME=dark|light`
+//! forces the theme, `AIO_SCREENSHOT_LOOK=hotel|professional` the look and `AIO_SCREENSHOT_LANG` the language.
+//! `AIO_SCREENSHOT_CONNECT=1` logs in to the dry-run recorder first, so the pages show their logged-in state.
+
+use eframe::egui;
+
+use super::{App, Page};
+
+fn var(name: &str) -> Option<String> {
+    std::env::var(format!("AIO_{name}")).or_else(|_| std::env::var(format!("HABBO_{name}"))).ok()
+}
+
+pub struct Screenshot {
+    path: Option<String>,
+    requested: bool,
+}
+
+impl Screenshot {
+    pub fn from_env() -> Self {
+        Self { path: var("SCREENSHOT"), requested: false }
+    }
+
+    pub fn active(&self) -> bool {
+        self.path.is_some()
+    }
+
+    pub fn tick(&mut self, app: &mut App, ctx: &egui::Context) {
+        let Some(path) = self.path.clone() else { return };
+        let frame = ctx.cumulative_pass_nr();
+        if frame == 0 {
+            if let Some(lang) = var("SCREENSHOT_LANG") {
+                crate::i18n::set(&lang);
+            }
+            if let Some(look) = var("SCREENSHOT_LOOK") {
+                super::theme::set_hotel(!look.eq_ignore_ascii_case("professional"));
+                super::theme::install_fonts(ctx);
+            }
+            match var("SCREENSHOT_THEME").as_deref() {
+                Some("dark") => ctx.set_theme(egui::Theme::Dark),
+                Some("light") => ctx.set_theme(egui::Theme::Light),
+                _ => {}
+            }
+            if var("SCREENSHOT_CONNECT").is_some() {
+                let login = aio_remote::ServerLogin::password("hotel.example.com", 22, "root", "");
+                let server: std::sync::Arc<dyn aio_remote::Server> = super::dry_run::connect(login);
+                app.set_session(server);
+            }
+            let page = var("SCREENSHOT_PAGE").unwrap_or_default();
+            if page == "login" {
+                app.show_login(None);
+            }
+            let target = match page.as_str() {
+                "install" => Page::Install,
+                "cms" | "atomcms" => Page::AtomCms,
+                "customcms" => Page::CustomCms,
+                "epicnext" => Page::EpicNext,
+                "gitea" => Page::Gitea,
+                "fail2ban" => Page::Fail2Ban,
+                "crowdsec" => Page::CrowdSec,
+                "deploy" => Page::DeployAssets,
+                "explorer" => Page::AssetExplorer,
+                "sql" => Page::SqlEditor,
+                "debug" => Page::Debug,
+                "tools" => Page::Tools,
+                "status" => Page::ServerStatus,
+                "monitor" => Page::EmulatorMonitor,
+                "terminal" => Page::Terminal,
+                "settings" => Page::Settings,
+                "about" => Page::About,
+                _ => Page::Dashboard,
+            };
+            app.page = target;
+            app.go(target);
+        }
+        // A few frames for the fonts, images and the first detection to settle.
+        let wait: u64 = var("SCREENSHOT_FRAMES").and_then(|v| v.parse().ok()).unwrap_or(12);
+        if frame == wait && !self.requested {
+            self.requested = true;
+            ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
+        }
+        ctx.request_repaint();
+        let image = ctx.input(|i| {
+            i.raw.events.iter().find_map(|e| if let egui::Event::Screenshot { image, .. } = e { Some(image.clone()) } else { None })
+        });
+        if let Some(image) = image {
+            let [w, h] = image.size;
+            let bytes: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_array()).collect();
+            if let Some(buffer) = image::RgbaImage::from_raw(w as u32, h as u32, bytes) {
+                let _ = buffer.save(&path);
+            }
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+        }
+    }
+}

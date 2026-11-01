@@ -52,3 +52,6 @@ Thumbs.db
 /configuration/
 **/configuration/keys/
 **/configuration/database/
+
+# Rust build output
+/target/

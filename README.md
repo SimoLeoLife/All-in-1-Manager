@@ -1341,11 +1341,21 @@ the C# sources they compile are in the git history up to commit `50dd986`.
 `.github/workflows/ci.yml` tests and builds both programs on every push to `main` and on every pull request, on
 `windows-latest` and `ubuntu-latest`, and keeps them as workflow artifacts.
 
-`.github/workflows/release.yml` publishes a release when `main` gets a version that has none yet: raise `version` in
-`[workspace.package]` of `Cargo.toml`, merge, and it tests and builds both programs again and publishes the release
-`rust-v<version>` (the tag is made on that commit) with `all-in-1-installer-windows-x64.exe` and
-`all-in-1-installer-linux-x64`, the files the update check looks for. Pushes to `main` that keep the version publish
-nothing. A tag `rust-v<version>` pushed by hand, or **Run workflow** on the Actions page, releases too.
+Every push to `main` makes a release (`.github/workflows/release.yml`), and the version goes up by itself: when the
+version in `Cargo.toml` already has a release, the last number is raised (2.0.3 → 2.0.4), the bot commits
+`Version 2.0.4` to `main`, and that commit is tested, built and published as `rust-v2.0.4` with
+`all-in-1-installer-windows-x64.exe` and `all-in-1-installer-linux-x64`, the files the update check looks for. A
+version you set yourself and that has no release yet (for a bigger step, e.g. 2.1.0) is released as it is. Pushes
+that only change the README, the licence or `public/docs` release nothing. After a release, `git pull` brings the
+bot's version commit to your copy.
+
+`source/tools/version.py` shows the version and changes it in `Cargo.toml`, `Cargo.lock` and the Windows version
+information (`app.rc`) together:
+
+```bash
+python source/tools/version.py              # print it
+python source/tools/version.py --set 2.1.0  # set your own
+```
 
 ## Project layout
 
@@ -1356,7 +1366,7 @@ public/                          What you read and run
   docs/screenshots/              The pictures in this README
   dev/, release/                 The program after source/tools/build.py, each with its configuration/ (not in git)
 source/                          The code
-  tools/                         build.py, i18n_keys.py (texts to translate), make_icon.py (the program icon)
+  tools/                         build.py, version.py, i18n_keys.py (texts to translate), make_icon.py (the program icon)
   Assets/                        Client images packed into the program (Deploy Assets → Images)
   crates/core/                   What lives on this computer
     src/settings.rs              configuration/settings.json: servers, default key, downloader, branches, look, layout, language

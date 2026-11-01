@@ -1,9 +1,11 @@
 name: Release
 
-# Publishes a GitHub Release with the Windows and Linux binaries when main gets a version that has no release yet:
-# raise `version` in [workspace.package] of Cargo.toml, merge, and the release rust-v<version> (tag included) is made
-# from that commit. Pushes to main that keep the version publish nothing. The installer's update check at startup
-# looks for exactly these tags and file names.
+# Every push to main publishes a release with the Windows and Linux binaries, and the version goes up by itself:
+#   - the version in Cargo.toml has no release yet (you set it yourself, e.g. 2.1.0): that version is released;
+#   - it already has one: the last number goes up (2.0.3 -> 2.0.4, with source/tools/version.py --next), the bot
+#     commits "Version 2.0.4" to main, and that is released.
+# The tag rust-v<version> is made on the released commit. Pushes that only change the README, the licence or
+# public/docs release nothing. The installer's update check at startup looks for exactly these tags and file names.
 #
 # A tag rust-v<version> pushed by hand (it must match Cargo.toml) or "Run workflow" on the Actions page also release.
 
@@ -11,8 +13,10 @@ on:
   push:
     branches: [main]
     tags: ["rust-v*"]
+    paths-ignore: ["README.md", "LICENSE", "public/docs/**"]
   workflow_dispatch:
 
+# One release at a time: a push that arrives meanwhile waits and then releases what main has by then.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -22,31 +26,50 @@ env:
 
 jobs:
   version:
-    name: Check version
+    name: Version
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.check.outputs.tag }}
+      sha: ${{ steps.check.outputs.sha }}
       release: ${{ steps.check.outputs.release }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The newest main (a run that waited may find the bot's version commit there), with the tags.
+          ref: ${{ github.ref_type == 'tag' && github.ref || 'main' }}
+          fetch-depth: 0
       - id: check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version=$(sed -n '/^\[workspace.package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          tag="rust-v$version"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "$tag" ]; then
-            echo "::error::Tag ${{ github.ref_name }} does not match Cargo.toml version $version"
-            exit 1
-          fi
-          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release $tag already exists: nothing to publish."
-            echo "release=false" >> "$GITHUB_OUTPUT"
+          version=$(python3 source/tools/version.py)
+          released() { gh release view "rust-v$1" --repo "${{ github.repository }}" >/dev/null 2>&1; }
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            if [ "${{ github.ref_name }}" != "rust-v$version" ]; then
+              echo "::error::Tag ${{ github.ref_name }} does not match Cargo.toml version $version"
+              exit 1
+            fi
+            if released "$version"; then release=false; else release=true; fi
+          elif ! released "$version"; then
+            echo "rust-v$version has no release yet: releasing it."
+            release=true
+          elif [ "$(git rev-parse "rust-v$version^{commit}" 2>/dev/null)" = "$(git rev-parse HEAD)" ]; then
+            echo "main is rust-v$version already: nothing new to release."
+            release=false
           else
-            echo "Publishing $tag."
-            echo "release=true" >> "$GITHUB_OUTPUT"
+            version=$(python3 source/tools/version.py --next)
+            echo "Raising the version to $version."
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -q -am "Version $version"
+            git push origin HEAD:main
+            release=true
           fi
+          echo "tag=rust-v$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
 
   windows:
     name: Windows x64
@@ -55,6 +78,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
@@ -76,6 +101,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
       - run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libgl1-mesa-dev libgtk-3-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -101,11 +128,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      # The tag is made on this commit when it does not exist yet.
+      # The tag is made on the released commit when it does not exist yet.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
-          target_commitish: ${{ github.sha }}
+          target_commitish: ${{ needs.version.outputs.sha }}
           name: All-in-1 Installer ${{ needs.version.outputs.tag }}
           generate_release_notes: true
           files: |

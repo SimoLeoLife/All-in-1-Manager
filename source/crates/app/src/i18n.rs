@@ -63,7 +63,7 @@ pub fn init(settings: &aio_core::InstallerSettings) {
 }
 
 /// Marks an English text that is translated later with `t(variable)` (a constant table, a match arm), so
-/// tools/i18n_keys.py collects it. Does nothing at run time.
+/// source/tools/i18n_keys.py collects it. Does nothing at run time.
 pub const fn n(english: &'static str) -> &'static str {
     english
 }

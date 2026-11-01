@@ -278,7 +278,7 @@ fn home() -> String {
 }
 
 // The text aio_remote::gamedata_files::name_problem returns (shown through t() below), copied here so
-// tools/i18n_keys.py collects it. Keep in step with gamedata_files.
+// source/tools/i18n_keys.py collects it. Keep in step with gamedata_files.
 const _: &str = n("The name in the console: letters, digits, '.', '-' and '_', at most 64.");
 
 /// What is wrong with a new name, or None (NameProblem in the C#).

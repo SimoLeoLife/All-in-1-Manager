@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/remote", "crates/terminal", "crates/app"]
+members = ["source/crates/core", "source/crates/remote", "source/crates/terminal", "source/crates/app"]
 
 [workspace.package]
 version = "2.0.0"
@@ -8,9 +8,9 @@ edition = "2021"
 license = "GPL-3.0-only"
 
 [workspace.dependencies]
-aio-core = { path = "crates/core" }
-aio-remote = { path = "crates/remote" }
-aio-terminal = { path = "crates/terminal" }
+aio-core = { path = "source/crates/core" }
+aio-remote = { path = "source/crates/remote" }
+aio-terminal = { path = "source/crates/terminal" }
 
 anyhow = "1"
 thiserror = "2"

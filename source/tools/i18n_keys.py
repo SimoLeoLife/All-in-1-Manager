@@ -1,8 +1,8 @@
 """Collects every English window text (the first argument of t("...") and tf("...")) in crates/app/src into
 crates/app/assets/i18n/keys.json, and lists per language the keys its JSON file is missing.
 
-    python tools/i18n_keys.py            # write keys.json, report what is missing
-    python tools/i18n_keys.py --missing  # also write <lang>.missing.json with the untranslated keys
+    python source/tools/i18n_keys.py            # write keys.json, report what is missing
+    python source/tools/i18n_keys.py --missing  # also write <lang>.missing.json with the untranslated keys
 """
 
 import json

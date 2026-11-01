@@ -195,5 +195,10 @@ impl Server for Recorder {
         Ok(PortForward { local_port: 13306, stop: None })
     }
 
+    async fn test_key_login(&self, _private_key_pem: &str, _passphrase: &str) -> Option<String> {
+        self.record("key-login", "root", None);
+        None
+    }
+
     async fn disconnect(&self) {}
 }

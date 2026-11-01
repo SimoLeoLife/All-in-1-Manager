@@ -245,6 +245,10 @@ pub trait Server: Send + Sync {
 
     async fn forward_local_port(&self, host: &str, port: u16) -> Result<PortForward>;
 
+    /// Logs in as root with this private key in a second session that trusts only this session's host key. None on
+    /// success, else the reason. (RootAuthorizedKeys.TestKeyLoginAsync)
+    async fn test_key_login(&self, private_key_pem: &str, passphrase: &str) -> Option<String>;
+
     async fn disconnect(&self);
 }
 

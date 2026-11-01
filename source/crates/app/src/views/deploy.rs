@@ -562,7 +562,7 @@ async fn local_assets() -> anyhow::Result<PathBuf> {
 }
 
 // The names and purposes of the fixed folders in aio_remote::emulator_assets (shown through t() in the rows), copied
-// here so tools/i18n_keys.py collects them. Keep in step with emulator_assets::fixed and folders_in.
+// here so source/tools/i18n_keys.py collects them. Keep in step with emulator_assets::fixed and folders_in.
 const _: [&str; 7] = [
     n("Client images"),
     n("loading_icon / clear_icon / big_arrow (Octane preloads them), wallet, navigator and catalogue extras"),

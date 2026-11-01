@@ -919,7 +919,7 @@ fn show_banner(ui: &mut egui::Ui, palette: &Palette, result: &Banner) {
     }
 }
 
-// The captions of aio_core::settings::BRANCH_CHOICES (translated in branch_text), copied here so tools/i18n_keys.py
+// The captions of aio_core::settings::BRANCH_CHOICES (translated in branch_text), copied here so source/tools/i18n_keys.py
 // collects them. Keep in step with BRANCH_CHOICES.
 const _: [&str; 2] = [n("stable, the version the hotel runs on"), n("the newest changes, not always stable")];
 

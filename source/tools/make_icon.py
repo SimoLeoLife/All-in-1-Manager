@@ -2,7 +2,7 @@
 a red sign on a sky-blue tile with the dark outline and hard shadow of the Hotel look. Drawn at 1024 px and scaled
 down, so every size is sharp. Needs Pillow.
 
-    python tools/make_icon.py
+    python source/tools/make_icon.py
 """
 
 import os

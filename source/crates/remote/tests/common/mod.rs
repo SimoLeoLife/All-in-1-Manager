@@ -41,7 +41,7 @@ pub fn compare(name: &str, actual: &str) {
     if expected == actual {
         return;
     }
-    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/golden-actual");
+    let out = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../target/golden-actual");
     let _ = std::fs::create_dir_all(&out);
     let _ = std::fs::write(out.join(format!("{name}.txt")), actual);
     let line = expected.lines().zip(actual.lines()).position(|(e, a)| e != a).unwrap_or_else(|| expected.lines().count().min(actual.lines().count()));

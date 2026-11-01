@@ -38,6 +38,9 @@ pub struct InstallerSettings {
     /// The window language (new in the Rust port; the C# installer ignores it).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
+    /// The sections folded in the window (the sidebar's groups, the Tools page's sections). New in the Rust port.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub collapsed: Vec<String>,
 }
 
 /// A branch to choose from, with the line the lists show behind its name.

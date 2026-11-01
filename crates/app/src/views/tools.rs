@@ -409,7 +409,12 @@ impl ToolsView {
                     }
                     found += shown.len();
                     ui.add_space(8.0);
-                    ui.label(RichText::new(t(heading).to_uppercase()).size(11.0).strong().color(palette.muted));
+                    // A folded section opens by itself while a search finds something in it.
+                    let open = crate::gui::collapse::heading(ui, &format!("tools:{heading}"), &t(heading).to_uppercase(), 11.0, palette.muted, 0.0)
+                        || !query.is_empty();
+                    if !open {
+                        continue;
+                    }
                     ui.horizontal_wrapped(|ui| {
                         ui.spacing_mut().item_spacing = egui::vec2(10.0, 10.0);
                         if !connected {

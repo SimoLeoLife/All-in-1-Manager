@@ -3,6 +3,7 @@
 //! it; then the login opens again as soon as nothing runs.
 
 pub mod banner;
+pub mod collapse;
 pub mod dialogs;
 pub mod dry_run;
 pub mod flags;
@@ -514,22 +515,35 @@ impl App {
                     }
                 };
                 nav(ui, t("Dashboard"), Icon::Home, Page::Dashboard);
-                sidebar_label(ui, t("SERVER"));
-                nav(ui, t("Install New Server"), Icon::ServerPlus, Page::Install);
-                sidebar_label(ui, t("ADDONS"));
-                nav(ui, "CMS", Icon::Puzzle, Page::AtomCms);
-                nav(ui, "Gitea", Icon::Git, Page::Gitea);
-                nav(ui, "Fail2Ban", Icon::Shield, Page::Fail2Ban);
-                nav(ui, "CrowdSec", Icon::Shield, Page::CrowdSec);
-                nav(ui, t("Deploy Assets"), Icon::Download, Page::DeployAssets);
-                nav(ui, "Asset Explorer", Icon::FolderSync, Page::AssetExplorer);
-                nav(ui, "SQL Editor", Icon::Database, Page::SqlEditor);
-                sidebar_label(ui, t("TOOLS"));
-                nav(ui, t("Tools"), Icon::Wrench, Page::Tools);
-                nav(ui, "Debug", Icon::Bug, Page::Debug);
-                sidebar_label(ui, t("GENERAL"));
-                nav(ui, t("Settings"), Icon::Cog, Page::Settings);
-                nav(ui, t("About"), Icon::Info, Page::About);
+                // Each group folds away with a click on its heading; a folded group still shows the page you are on.
+                let groups: [(&str, &str, Vec<(&str, Icon, Page)>); 4] = [
+                    ("sidebar:server", t("SERVER"), vec![(t("Install New Server"), Icon::ServerPlus, Page::Install)]),
+                    (
+                        "sidebar:addons",
+                        t("ADDONS"),
+                        vec![
+                            ("CMS", Icon::Puzzle, Page::AtomCms),
+                            ("Gitea", Icon::Git, Page::Gitea),
+                            ("Fail2Ban", Icon::Shield, Page::Fail2Ban),
+                            ("CrowdSec", Icon::Shield, Page::CrowdSec),
+                            (t("Deploy Assets"), Icon::Download, Page::DeployAssets),
+                            ("Asset Explorer", Icon::FolderSync, Page::AssetExplorer),
+                            ("SQL Editor", Icon::Database, Page::SqlEditor),
+                        ],
+                    ),
+                    ("sidebar:tools", t("TOOLS"), vec![(t("Tools"), Icon::Wrench, Page::Tools), ("Debug", Icon::Bug, Page::Debug)]),
+                    ("sidebar:general", t("GENERAL"), vec![(t("Settings"), Icon::Cog, Page::Settings), (t("About"), Icon::Info, Page::About)]),
+                ];
+                for (key, heading, items) in groups {
+                    ui.add_space(14.0);
+                    let open = collapse::heading(ui, key, heading, 10.5, Fixed::sidebar_muted(), 12.0);
+                    ui.add_space(2.0);
+                    for (label, icon, page) in items {
+                        if open || selected(page) {
+                            nav(ui, label, icon, page);
+                        }
+                    }
+                }
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     ui.label(RichText::new(t("Targets Ubuntu Server and Debian")).size(11.5).color(Fixed::sidebar_muted()));
                     ui.add_space(4.0);
@@ -798,15 +812,6 @@ fn status_pill(ui: &mut egui::Ui, text: &str, back: Color32, fore: Color32) -> e
     ui.painter().circle_filled(egui::pos2(rect.left() + 15.0, rect.center().y), 4.0, fore);
     ui.painter().galley(egui::pos2(rect.left() + 26.0, rect.center().y - galley.size().y / 2.0), galley, fore);
     response
-}
-
-fn sidebar_label(ui: &mut egui::Ui, text: &str) {
-    ui.add_space(18.0);
-    ui.horizontal(|ui| {
-        ui.add_space(12.0);
-        ui.label(RichText::new(text).size(10.5).strong().extra_letter_spacing(1.0).color(Fixed::sidebar_muted()));
-    });
-    ui.add_space(4.0);
 }
 
 fn nav_button(ui: &mut egui::Ui, label: &str, icon: Icon, selected: bool) -> egui::Response {

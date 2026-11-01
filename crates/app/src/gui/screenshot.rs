@@ -2,7 +2,8 @@
 //! window and closes it. `AIO_SCREENSHOT_PAGE` picks the page (dashboard, install, cms, gitea, fail2ban, crowdsec,
 //! deploy, explorer, sql, debug, tools, status, monitor, terminal, settings, about, login); `AIO_SCREENSHOT_THEME=dark|light`
 //! forces the theme, `AIO_SCREENSHOT_LOOK=hotel|professional` the look and `AIO_SCREENSHOT_LANG` the language.
-//! `AIO_SCREENSHOT_CONNECT=1` logs in to the dry-run recorder first, so the pages show their logged-in state.
+//! `AIO_SCREENSHOT_CONNECT=1` logs in to the dry-run recorder first, so the pages show their logged-in state, and
+//! `AIO_SCREENSHOT_STEP=<n>` opens the n-th step of the page's wizard.
 
 use eframe::egui;
 
@@ -73,6 +74,12 @@ impl Screenshot {
             };
             app.page = target;
             app.go(target);
+            // AIO_SCREENSHOT_STEP=<n>: the n-th step of the wizard on that page (1 is the first).
+            if let (Some(step), Some(server)) = (var("SCREENSHOT_STEP").and_then(|s| s.parse::<usize>().ok()), app.shared.session()) {
+                if let Some(wizard) = app.wizards.get(target) {
+                    wizard.jump_to(step.saturating_sub(1), &server);
+                }
+            }
         }
         // A few frames for the fonts, images and the first detection to settle.
         let wait: u64 = var("SCREENSHOT_FRAMES").and_then(|v| v.parse().ok()).unwrap_or(12);

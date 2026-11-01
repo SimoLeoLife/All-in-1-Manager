@@ -194,6 +194,14 @@ impl Wizard {
         }
     }
 
+    /// Opens step `index` (0-based) at once, for screenshots of the later steps.
+    pub fn jump_to(&mut self, index: usize, server: &Arc<dyn Server>) {
+        if index < self.entries.len() {
+            self.started_for = Some(server_id(server));
+            self.enter_step(index, server);
+        }
+    }
+
     fn enter_step(&mut self, index: usize, server: &Arc<dyn Server>) {
         self.index = index;
         self.outcomes[index] = None;

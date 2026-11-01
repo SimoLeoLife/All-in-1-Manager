@@ -15,8 +15,9 @@ SOURCE = os.path.join(ROOT, "crates", "app", "src")
 I18N = os.path.join(ROOT, "crates", "app", "assets", "i18n")
 LANGUAGES = ["it", "fr", "de", "nl", "es", "pt", "tr", "fi"]
 
-# t("...") or tf("...", ...): a Rust string literal with \" and \\ escapes; also t(r"...") raw strings.
-CALL = re.compile(r'\b(?:t|tf)\(\s*(?:"((?:[^"\\]|\\.)*)"|r#?"(.*?)"#?)', re.S)
+# t("..."), tf("...", ...) or n("...") (a text translated later through a variable): a Rust string literal with \" and
+# \\ escapes; also raw strings.
+CALL = re.compile(r'\b(?:t|tf|n)\(\s*(?:"((?:[^"\\]|\\.)*)"|r#?"(.*?)"#?)', re.S)
 
 
 def unescape(text):

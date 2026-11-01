@@ -33,6 +33,10 @@ now** starts the installer again right away (it waits while a step runs). Light 
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
+| Professional look | Dark |
+|---|---|
+| ![Professional look](docs/screenshots/professional.png) | ![Dark](docs/screenshots/dashboard-dark.png) |
+
 Once you are logged in, the dashboard's **Full server installation** card shows what is on the server: per component
 the build version (the emulator's JAR, Octane's and the renderer's `package.json`), the branch, commit and date of
 its clone, and whether GitHub has something new. That comes from the same `git fetch` as **Tools → Check for
@@ -41,8 +45,6 @@ against the branches chosen in **Settings → Repository branches**. A component
 **N NEW COMMITS** and an **Update** button, which opens Tools and runs that update (Update emulator, Update Octane,
 or Update AtomCMS) with its question and progress there. Octane and Octane-Renderer are updated and built together,
 so both rows run Update Octane. AtomCMS gets a row of its own once it is installed.
-
-![Dashboard with versions and updates](docs/screenshots/dashboard-versions.png)
 
 ## Requirements
 
@@ -132,12 +134,8 @@ key is already one of them) and asks:
 - **Add my key to it**: keeps the existing keys, so the server has several (no duplicates).
 - **Abort installation**: changes nothing on the server. A key pair generated for this run is deleted again.
 
-![Existing keys](docs/screenshots/ssh-key-existing.png)
-
 After an abort you choose **Abort** (leave the installation and go back to the dashboard; it starts over the next
 time) or **Start over** (the SSH key step again). The login stays open either way.
-
-![Aborted](docs/screenshots/ssh-key-aborted.png)
 
 Before every change, the old file is backed up on the server as
 `/root/.ssh/authorized_keys.bak-<date>-<random>`. The installer writes `/root/.ssh` with mode 700
@@ -145,8 +143,6 @@ and `authorized_keys` with mode 600, both owned by root, and checks that the key
 For a generated key it then opens a second SSH session **as root with the new key** to prove it works.
 If that fails, it reports why (for example `PermitRootLogin no` in sshd). The second session only
 trusts the host key seen during the first login.
-
-![Key installed](docs/screenshots/ssh-key-installed.png)
 
 ### The configuration directory
 
@@ -202,10 +198,6 @@ saved to `/root/nginx-backup-<date>.tar.gz`, the old packages are purged, and th
 or **Abort installation**. If nginx.org's NGINX is already there, the step upgrades it and keeps your
 `nginx.conf` changes. Running the step again is safe.
 
-![Replace distro NGINX](docs/screenshots/nginx-replace.png)
-
-![NGINX installed](docs/screenshots/nginx-installed.png)
-
 Long commands stream their output live into the log (`Server::run_as_root_streaming`).
 **Copy log** in the top right corner of the log puts it on the clipboard, so a failure can be pasted into a
 message instead of screenshotted. Select lines first to copy only those; Ctrl+C does the same. The button is
@@ -240,8 +232,6 @@ to finish with an older version.
    temporary site on `127.0.0.1:8085` must serve a PHP page through NGINX. The test site is removed afterwards.
 
 ![PHP](docs/screenshots/php-intro.png)
-
-![PHP installed](docs/screenshots/php-installed.png)
 
 In an NGINX site:
 
@@ -286,10 +276,6 @@ After PHP, **Next: MariaDB** installs the database:
 
 ![MariaDB](docs/screenshots/mariadb-intro.png)
 
-![Upgrade an existing MariaDB](docs/screenshots/mariadb-upgrade.png)
-
-![MariaDB installed](docs/screenshots/mariadb-installed.png)
-
 The passwords are saved **before** anything changes on the server, in
 `configuration/database/<server>/mariadb.txt` (owner-only):
 
@@ -325,14 +311,10 @@ After MariaDB, **Next: Node.js** installs the build tools, following your comman
 
 ![Node.js](docs/screenshots/node-intro.png)
 
-![Node.js installed](docs/screenshots/node-installed.png)
-
 The step uses and tests the tools it installs in `/usr/bin`, also when an older `node`, `npm` or `composer`
 (e.g. a hand-installed one in `/usr/local/bin`) comes first in root's `PATH`. Those older copies are reported
 as a warning with their paths, so typing `node` really runs Node.js 26 after you remove them; the installer
 does not delete them itself.
-
-![Older copies in the PATH](docs/screenshots/node-shadowing.png)
 
 **Steps 7–9 – Clone Polaris, Octane and Octane-Renderer** (done)
 
@@ -361,10 +343,6 @@ has, because Polaris writes it as `dev` and Octane and the Renderer as `Dev`.
   renames it to `<folder>.bak-<date>` (nothing is deleted), or **Abort installation**.
 
 ![Clone](docs/screenshots/clone-intro.png)
-
-![Folder with other content](docs/screenshots/clone-other-content.png)
-
-![Cloned](docs/screenshots/clone-done.png)
 
 **Step 10 – Build and run the Polaris emulator** (done)
 
@@ -416,8 +394,6 @@ What it does:
    changed. It waits for `Polaris has successfully loaded.` and checks port 3000 (opened in ufw when active).
 
 ![Emulator](docs/screenshots/emulator-intro.png)
-
-![Emulator running](docs/screenshots/emulator-running.png)
 
 ```sh
 systemctl status emulator          # running?
@@ -475,8 +451,6 @@ https://example.com/api/...  Traefik          -> Polaris    http://127.0.0.1:209
    that shows Let's Encrypt's error (usually: the domain does not point to this server yet, or port 80 is closed).
 
 ![Web access](docs/screenshots/web-access-intro.png)
-
-![Web access done](docs/screenshots/web-access-done.png)
 
 With Cloudflare: keep the DNS record **proxied** (orange cloud) and set SSL/TLS to **Full (strict)** for https.
 
@@ -647,8 +621,6 @@ at* when a step was skipped or failed), with what every step did, and then:
    (**Open &lt;url&gt;** button), register the first account, log out and make it administrator:
    ``UPDATE users SET `rank` = 7 WHERE username = 'YourName';`` (HeidiSQL over the SSH tunnel).
 
-![Completed](docs/screenshots/completed.png)
-
 ### Running the installer again
 
 Every install step first checks the server and shows what it found:
@@ -672,10 +644,6 @@ When a step is not done yet, the install button is the highlighted one and **Ski
 (for example, to keep using the password instead of a key). Skipping changes nothing on the server.
 Skipping a step moves on to the next one, and a failed step can be skipped too.
 
-![SSH key already installed](docs/screenshots/rerun-key-installed.png)
-
-![NGINX already installed](docs/screenshots/rerun-nginx-installed.png)
-
 A new step implements `InstallStep` (`crates/app/src/gui/step.rs`) and is added to `views::server_steps()`. An addon is a
 `Wizard` with its own step list and finish page (and `key_step: false`, see `views/gitea.rs`), plus a sidebar entry in `gui/mod.rs`.
 
@@ -692,8 +660,6 @@ CMS** (set up completely, see [EpicNext CMS](#epicnext-cms)), **My own CMS** (fr
 [Your own CMS](#your-own-cms)) or **Remove the CMS** (see [Removing the CMS](#removing-the-cms)). They work the same
 way for the hotel: the CMS is the website and Octane moves to **/client**, and all need a finished server installation. One CMS is the
 website at a time; switching keeps the other one's files.
-
-![The CMS question](docs/screenshots/cms-question.png)
 
 **Ports.** Every CMS gets its own NGINX site (`/etc/nginx/sites-available/cms-<name>`) on 127.0.0.1, on the first
 free port from **85 to 95** (85 is the hotel site, so usually 86); a CMS keeps its port when the addon runs again.
@@ -762,8 +728,6 @@ The last page shows the installation key with a **Copy** button, to paste in **A
 settings above, which the installer already has filled in. Register your account on the CMS and make it
 administrator (``UPDATE users SET `rank` = 7 WHERE username = 'YourName';``); the housekeeping is on `/housekeeping`.
 Captcha keys (Turnstile / reCAPTCHA) go in `/var/www/atomcms/.env`. To update AtomCMS later, run the addon again.
-
-![AtomCMS completed](docs/screenshots/atomcms-completed.png)
 
 ### EpicNext CMS
 
@@ -909,8 +873,6 @@ and settings stay in `/opt/gitea` (installing again brings them back, with the s
 delete the repositories, accounts and settings**: then `/opt/gitea`, the image and the saved admin password
 (`gitea.txt`) are deleted too. Remove the domain's A record yourself when you no longer need it.
 
-![Remove Gitea](docs/screenshots/gitea-remove.png)
-
 ### Fail2Ban
 
 **Addons → Fail2Ban** installs [fail2ban](https://github.com/fail2ban/fail2ban) to protect SSH against password
@@ -1036,8 +998,6 @@ The config JSON files are only added when they are missing: hotels and the emula
 badge texts). Tick **Also replace config JSON files** to overwrite them with the downloader's. New furniture also needs
 its rows in `items_base` and `catalog_items`: make the SQL with the All-in-1 converter (Hotel Tools → Generate SQL).
 
-![Deploy Assets done](docs/screenshots/deploy-assets-done.png)
-
 #### UI texts
 
 The second step of Deploy Assets installs the client's own interface texts (buttons, windows, messages). Octane's
@@ -1148,8 +1108,6 @@ registry's index: nothing is downloaded or changed), and shows **NEW IMAGE WAITI
 the old container still runs (a `docker restart` keeps the image the container was made from; **Update** and
 **Restart Traefik** make a new container from it). **Update** runs the matching tool on the Tools page.
 
-![The component list](docs/screenshots/dashboard-components.png)
-
 **Settings** (sidebar, under GENERAL):
 
 - **Look**: Hotel or Professional (see the top of this page).
@@ -1196,13 +1154,9 @@ the old container still runs (a `docker restart` keeps the image the container w
 
 ![Settings: servers](docs/screenshots/settings-servers.png)
 
-![Settings](docs/screenshots/settings-keys.png)
-
 - **All-in-1 downloader**: the path of the downloader's executable (`Habbo Downloader.exe`, or the Linux binary).
   Deploy Assets takes the files from the `Habbo_Default` folder next to it; the card shows how many furniture bundles
   it found.
-
-![Settings: All-in-1 downloader](docs/screenshots/settings-downloader.png)
 
 ## Debug
 
@@ -1297,17 +1251,9 @@ password or a damaged file changes nothing.
 
 ![Server status](docs/screenshots/server-status.png)
 
-![Server status: disks, users and versions](docs/screenshots/server-status-versions.png)
-
 ![Emulator & wired](docs/screenshots/emulator-wired.png)
 
-![Emulator & wired: slow wired rooms](docs/screenshots/emulator-wired-rooms.png)
-
 ![SSH terminal](docs/screenshots/tools-terminal.png)
-
-![Enable firewall](docs/screenshots/tools-firewall.png)
-
-![Restart all](docs/screenshots/tools-restart-all.png)
 
 ## Updating the installer itself
 

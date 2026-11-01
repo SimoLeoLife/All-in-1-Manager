@@ -1341,14 +1341,11 @@ the C# sources they compile are in the git history up to commit `50dd986`.
 `.github/workflows/ci.yml` tests and builds both programs on every push to `main` and on every pull request, on
 `windows-latest` and `ubuntu-latest`, and keeps them as workflow artifacts.
 
-Pushing a tag `rust-v<version>` (the version in `Cargo.toml`) runs `.github/workflows/release.yml`, which tests and
-builds both programs again and publishes a release with `all-in-1-installer-windows-x64.exe` and
-`all-in-1-installer-linux-x64`, the files the update check looks for:
-
-```bash
-git tag rust-v2.0.0
-git push origin rust-v2.0.0
-```
+`.github/workflows/release.yml` publishes a release when `main` gets a version that has none yet: raise `version` in
+`[workspace.package]` of `Cargo.toml`, merge, and it tests and builds both programs again and publishes the release
+`rust-v<version>` (the tag is made on that commit) with `all-in-1-installer-windows-x64.exe` and
+`all-in-1-installer-linux-x64`, the files the update check looks for. Pushes to `main` that keep the version publish
+nothing. A tag `rust-v<version>` pushed by hand, or **Run workflow** on the Actions page, releases too.
 
 ## Project layout
 

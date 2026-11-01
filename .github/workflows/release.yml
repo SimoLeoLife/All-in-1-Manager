@@ -1,18 +1,21 @@
 name: Release
 
-# Push a tag rust-v<version> (matching [workspace.package] version in Cargo.toml) to publish a GitHub Release with
-# the Windows and Linux binaries. The installer's update check at startup looks for exactly these tags and file names.
+# Publishes a GitHub Release with the Windows and Linux binaries when main gets a version that has no release yet:
+# raise `version` in [workspace.package] of Cargo.toml, merge, and the release rust-v<version> (tag included) is made
+# from that commit. Pushes to main that keep the version publish nothing. The installer's update check at startup
+# looks for exactly these tags and file names.
 #
-#   git tag rust-v2.0.0 && git push origin rust-v2.0.0
+# A tag rust-v<version> pushed by hand (it must match Cargo.toml) or "Run workflow" on the Actions page also release.
 
 on:
   push:
+    branches: [main]
     tags: ["rust-v*"]
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "Tag to release (rust-v<version>); it must already exist"
-        required: true
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,30 +25,36 @@ jobs:
     name: Check version
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      tag: ${{ steps.check.outputs.tag }}
+      release: ${{ steps.check.outputs.release }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-      - id: tag
-        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
-      - name: Tag matches the Cargo version
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
-          cargo_version=$(sed -n '/^\[workspace.package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' Cargo.toml)
-          if [ "rust-v$cargo_version" != "$tag" ]; then
-            echo "::error::Tag $tag does not match Cargo.toml version $cargo_version"
+          version=$(sed -n '/^\[workspace.package\]/,/^\[/ s/^version = "\(.*\)"/\1/p' Cargo.toml)
+          tag="rust-v$version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.ref_type }}" = "tag" ] && [ "${{ github.ref_name }}" != "$tag" ]; then
+            echo "::error::Tag ${{ github.ref_name }} does not match Cargo.toml version $version"
             exit 1
+          fi
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $tag already exists: nothing to publish."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Publishing $tag."
+            echo "release=true" >> "$GITHUB_OUTPUT"
           fi
 
   windows:
     name: Windows x64
     needs: version
+    if: needs.version.outputs.release == 'true'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace
@@ -63,11 +72,10 @@ jobs:
   linux:
     name: Linux x64
     needs: version
+    if: needs.version.outputs.release == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.version.outputs.tag }}
       - run: sudo apt-get update && sudo apt-get install -y pkg-config libxkbcommon-dev libgl1-mesa-dev libgtk-3-dev
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -93,9 +101,11 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # The tag is made on this commit when it does not exist yet.
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
           name: All-in-1 Installer ${{ needs.version.outputs.tag }}
           generate_release_notes: true
           files: |

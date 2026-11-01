@@ -122,9 +122,7 @@ pub(crate) fn show(ctx: &egui::Context, shared: &Shared, prompt: &mut UpdateProm
                         ),
                         13.0,
                     );
-                    if let Some(notes) = notes(&release.notes) {
-                        widgets::muted(ui, &palette, &notes, 12.0);
-                    }
+                    what_is_new(ui, &palette, release);
                     match &state {
                         Download::Asking => {}
                         Download::Running { done, total } => {
@@ -221,6 +219,47 @@ fn notes(body: &str) -> Option<String> {
     } else {
         Some(notes.to_string())
     }
+}
+
+/// What the update brings: every version since this one, newest first, with its release notes (headings, bullets
+/// and bold of GitHub's Markdown drawn plainly), in a scrolling box.
+fn what_is_new(ui: &mut egui::Ui, palette: &crate::gui::theme::Palette, release: &update::Release) {
+    let changes: Vec<&(String, String)> = release.changes.iter().filter(|(_, notes)| !notes.trim().is_empty()).collect();
+    if changes.is_empty() {
+        if let Some(notes) = notes(&release.notes) {
+            widgets::muted(ui, palette, &notes, 12.0);
+        }
+        return;
+    }
+    ui.label(RichText::new(t("What's new")).size(13.5).strong());
+    egui::Frame::new().fill(palette.hover).corner_radius(8).inner_margin(egui::Margin::symmetric(12, 8)).show(ui, |ui| {
+        egui::ScrollArea::vertical().max_height(220.0).auto_shrink([false, true]).show(ui, |ui| {
+            for (version, notes) in changes {
+                ui.label(RichText::new(tf("Version {version}", &[("version", version)])).size(13.0).strong().color(palette.accent_text));
+                for line in notes.lines() {
+                    let line = line.trim_end();
+                    let plain = line.replace("**", "").replace('`', "");
+                    let trimmed = plain.trim_start();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    if let Some(heading) = trimmed.strip_prefix('#') {
+                        ui.label(RichText::new(heading.trim_start_matches('#').trim()).size(12.5).strong());
+                    } else if let Some(item) = trimmed.strip_prefix("- ").or_else(|| trimmed.strip_prefix("* ")) {
+                        let depth = (plain.len() - trimmed.len()) as f32;
+                        ui.horizontal_top(|ui| {
+                            ui.add_space(6.0 + depth * 4.0);
+                            ui.label(RichText::new("•").size(12.0).color(palette.muted));
+                            widgets::muted(ui, palette, item, 12.0);
+                        });
+                    } else {
+                        widgets::muted(ui, palette, trimmed, 12.0);
+                    }
+                }
+                ui.add_space(6.0);
+            }
+        });
+    });
 }
 
 fn megabytes(bytes: u64) -> String {

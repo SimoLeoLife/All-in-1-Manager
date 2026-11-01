@@ -30,6 +30,8 @@ pub struct Release {
     pub asset_url: String,
     pub asset_bytes: u64,
     pub notes: String,
+    /// Every published version newer than this build, newest first, with its notes: what an update brings.
+    pub changes: Vec<(String, String)>,
 }
 
 #[derive(Deserialize)]
@@ -95,6 +97,17 @@ pub async fn latest() -> Result<Option<Release>> {
 }
 
 fn newest(releases: Vec<GithubRelease>) -> Option<Release> {
+    let mut changes: Vec<((u64, u64, u64), String, String)> = releases
+        .iter()
+        .filter(|r| !r.draft && !r.prerelease)
+        .filter_map(|r| {
+            let version = r.tag_name.strip_prefix(TAG_PREFIX)?;
+            let parsed = parse_version(version)?;
+            is_newer(version).then(|| (parsed, version.to_string(), r.body.clone().unwrap_or_default()))
+        })
+        .collect();
+    changes.sort_by(|a, b| b.0.cmp(&a.0));
+    let changes: Vec<(String, String)> = changes.into_iter().map(|(_, version, notes)| (version, notes)).collect();
     releases
         .into_iter()
         .filter(|r| !r.draft && !r.prerelease)
@@ -109,6 +122,8 @@ fn newest(releases: Vec<GithubRelease>) -> Option<Release> {
                     asset_url: asset.browser_download_url.clone(),
                     asset_bytes: asset.size,
                     notes: r.body.clone().unwrap_or_default(),
+                    // Not past the version this update installs.
+                    changes: changes.iter().filter(|(v, _)| parse_version(v).is_some_and(|p| p <= version)).cloned().collect(),
                 },
             ))
         })
@@ -217,7 +232,11 @@ mod tests {
             release("rust-v4.0.0", true, true),
             release("v9.0.0", true, false), // the .NET build
         ];
-        assert_eq!(newest(releases).map(|r| r.version).as_deref(), Some("2.2.0"));
+        let release = newest(releases).unwrap();
+        assert_eq!(release.version, "2.2.0");
+        // What an update brings: the newer versions only (this build is 2.0.0), newest first.
+        let versions: Vec<&str> = release.changes.iter().map(|(v, _)| v.as_str()).collect();
+        assert_eq!(versions, vec!["2.2.0", "2.0.1"]);
         assert!(is_newer("99.0.0"));
         assert!(!is_newer(CURRENT_VERSION));
         assert!(!is_newer("0.1.0"));

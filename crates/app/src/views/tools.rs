@@ -201,11 +201,19 @@ pub struct ToolsView {
     server_status: Option<ServerStatusView>,
     emulator_monitor: Option<EmulatorMonitorView>,
     terminal: Option<TerminalView>,
+    /// What the search field above the tiles filters on.
+    search: String,
+}
+
+/// True when every word of `query` is in the tool's title, description or caption (English or translated).
+fn matches(query: &str, texts: &[&str]) -> bool {
+    let haystack = texts.iter().map(|t| t.to_lowercase()).collect::<Vec<_>>().join(" ");
+    query.split_whitespace().all(|word| haystack.contains(&word.to_lowercase()))
 }
 
 impl ToolsView {
     pub fn new(_shared: &Shared) -> Self {
-        Self { page: Page::Tools, state: Arc::new(Mutex::new(State::default())), server_status: None, emulator_monitor: None, terminal: None }
+        Self { page: Page::Tools, state: Arc::new(Mutex::new(State::default())), server_status: None, emulator_monitor: None, terminal: None, search: String::new() }
     }
 
     /// Starts the update check once per login (not while a tool runs). (ToolsView.Refresh)
@@ -366,7 +374,17 @@ impl ToolsView {
         egui::ScrollArea::vertical().id_salt("tools-page").auto_shrink([false, false]).show(ui, |ui| {
             widgets::card(ui, palette, egui::Margin::symmetric(24, 20), |ui| {
                 ui.spacing_mut().item_spacing.y = 8.0;
-                ui.label(widgets::title_text(t("Server tools"), 15.0));
+                ui.horizontal(|ui| {
+                    ui.label(widgets::title_text(t("Server tools"), 15.0));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if !self.search.is_empty() && ui.small_button("✕").on_hover_text(t("Clear the search")).clicked() {
+                            self.search.clear();
+                        }
+                        ui.add(egui::TextEdit::singleline(&mut self.search).hint_text(t("Search the tools ...")).desired_width(240.0));
+                    });
+                });
+                let query = self.search.trim().to_string();
+                let mut found = 0;
                 if !connected {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(t("Not connected: log in to the server to use these tools.")).size(12.5).color(palette.warning_text));
@@ -377,6 +395,19 @@ impl ToolsView {
                     });
                 }
                 for (heading, tools) in SECTIONS {
+                    let shown: Vec<_> = tools
+                        .iter()
+                        .copied()
+                        .filter(|tool| {
+                            let (title, description, _) = tool.info();
+                            let caption = captions.get(tool).cloned().unwrap_or_default();
+                            query.is_empty() || matches(&query, &[title, t(title), description, t(description), &caption, heading, t(heading)])
+                        })
+                        .collect();
+                    if shown.is_empty() {
+                        continue;
+                    }
+                    found += shown.len();
                     ui.add_space(8.0);
                     ui.label(RichText::new(t(heading).to_uppercase()).size(11.0).strong().color(palette.muted));
                     ui.horizontal_wrapped(|ui| {
@@ -384,7 +415,7 @@ impl ToolsView {
                         if !connected {
                             ui.multiply_opacity(0.45);
                         }
-                        for &tool in tools {
+                        for &tool in &shown {
                             let (title, description, icon) = tool.info();
                             let caption = captions.get(&tool).cloned().unwrap_or_else(|| t(description).to_string());
                             if tile(ui, palette, icon, t(title), &caption, connected && !running) {
@@ -396,6 +427,9 @@ impl ToolsView {
                         let color = if updates_warning { palette.warning_text } else { palette.subtle };
                         ui.add(egui::Label::new(RichText::new(&updates_text).size(12.0).color(color)).wrap());
                     }
+                }
+                if found == 0 {
+                    ui.label(RichText::new(tf("No tool matches \"{search}\".", &[("search", &query)])).size(12.5).color(palette.muted));
                 }
                 if let Some(host) = &host {
                     ui.add_space(12.0);
@@ -741,6 +775,14 @@ fn progress_step(done: u64, total: i64, reported: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn search_matches_every_word() {
+        assert!(matches("restart nginx", &["Restart NGINX", "nginx -t first"]));
+        assert!(matches("BACKUP", &["Create full database backup"]));
+        assert!(!matches("restart gitea", &["Restart NGINX"]));
+        assert!(matches("", &["anything"]));
+    }
 
     fn update(name: &str, directory: &str, branch: &str, target: Option<&str>, behind: i32) -> RepositoryUpdate {
         RepositoryUpdate {

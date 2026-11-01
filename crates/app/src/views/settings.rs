@@ -306,9 +306,13 @@ impl SettingsView {
         );
         let current = i18n::current();
         let mut chosen = None;
-        egui::ComboBox::from_id_salt("settings-language").selected_text(current.native_name).width(380.0).show_ui(ui, |ui| {
+        // One button per language, with the flag of the Habbo hotel that speaks it.
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(8.0, 8.0);
             for lang in LANGUAGES {
-                if ui.selectable_label(lang.code == current.code, format!("{}   ({})", lang.native_name, lang.hotel_domain)).clicked() {
+                let selected = lang.code == current.code;
+                let response = language_button(ui, palette, lang.native_name, lang.hotel_domain, selected).on_hover_text(lang.hotel_domain);
+                if response.clicked() {
                     chosen = Some(*lang);
                 }
             }
@@ -867,6 +871,22 @@ impl View for SettingsView {
     fn session_changed(&mut self, shared: &Shared) {
         self.load_users(shared, false);
     }
+}
+
+/// A language: the flag of its hotel and its own name. Sized before it is drawn, so the row wraps.
+fn language_button(ui: &mut egui::Ui, palette: &Palette, name: &str, domain: &str, selected: bool) -> egui::Response {
+    let galley = ui.painter().layout_no_wrap(name.to_string(), egui::FontId::new(13.0, egui::FontFamily::Name("bold".into())), palette.text);
+    let size = egui::vec2(10.0 + 24.0 + 8.0 + galley.size().x + 12.0, 32.0);
+    let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
+    let painter = ui.painter();
+    let fill = if selected { palette.selected } else if response.hovered() { palette.hover } else { palette.card };
+    painter.rect_filled(rect, 8.0, fill);
+    let stroke = if selected { egui::Stroke::new(2.0_f32, palette.accent_text) } else { egui::Stroke::new(1.0_f32, palette.card_border) };
+    painter.rect_stroke(rect, 8.0, stroke, egui::StrokeKind::Inside);
+    let flag = egui::Rect::from_min_size(egui::pos2(rect.left() + 10.0, rect.center().y - 8.0), egui::vec2(24.0, 16.0));
+    crate::gui::flags::paint(painter, flag, domain);
+    painter.galley(egui::pos2(flag.right() + 8.0, rect.center().y - galley.size().y / 2.0), galley, palette.text);
+    response.on_hover_cursor(egui::CursorIcon::PointingHand)
 }
 
 fn card_heading(ui: &mut egui::Ui, palette: &Palette, title: &str, text: &str) {

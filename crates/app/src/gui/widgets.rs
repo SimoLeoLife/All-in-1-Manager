@@ -5,10 +5,12 @@ use eframe::egui::{self, Color32, RichText};
 use super::theme::{self, Fixed, Palette};
 
 pub fn card<R>(ui: &mut egui::Ui, palette: &Palette, margin: egui::Margin, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    // The margin and the edge go around the content, inside the width there is: the content gets what is left.
+    let content = (ui.available_width() - (margin.left + margin.right) as f32 - 2.0 * theme::card_edge()).max(0.0);
     card_frame(palette)
         .inner_margin(margin)
         .show(ui, |ui| {
-            ui.set_width(ui.available_width());
+            ui.set_width(content);
             add(ui)
         })
         .inner

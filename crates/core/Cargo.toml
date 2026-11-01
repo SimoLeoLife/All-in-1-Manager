@@ -27,6 +27,7 @@ zip.workspace = true
 ed25519-dalek = { version = "2", features = ["rand_core"] }
 rsa = "0.9"
 hex = "0.4"
+argon2 = "0.5"
 
 [dev-dependencies]
 tempfile.workspace = true

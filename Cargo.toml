@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/remote"]
+members = ["crates/core", "crates/remote", "crates/terminal"]
 
 [workspace.package]
 version = "2.0.0"
@@ -37,7 +37,7 @@ bcrypt-pbkdf = "0.10"
 flate2 = "1"
 tar = "0.4"
 zip = { version = "2.6.1", default-features = false, features = ["deflate"] }
-russh = { version = "0.65", default-features = false, features = ["ring", "flate2"] }
+russh = { version = "0.65", default-features = false, features = ["ring", "flate2", "rsa"] }
 russh-sftp = "2"
 mysql_async = { version = "0.35.1", default-features = false, features = ["minimal", "rustls-tls"] }
 vte = "0.15"

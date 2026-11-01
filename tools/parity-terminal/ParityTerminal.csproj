@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Feeds crates/terminal/tests/scenarios.txt into the C# installer's TerminalEmulator and writes the screen dumps
+       to crates/terminal/tests/golden, which the Rust tests compare with. Development only. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>AllInOneInstaller</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../SourceCode/Terminal/TerminalEmulator.cs" />
+  </ItemGroup>
+</Project>

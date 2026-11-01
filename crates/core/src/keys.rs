@@ -276,6 +276,188 @@ fn putty_cipher_key(secret: &[u8]) -> Vec<u8> {
     [first.as_slice(), second.as_slice()].concat()
 }
 
+/// Why a PuTTY key could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PpkError {
+    #[error("This key has a password: enter it.")]
+    NeedsPassword,
+    #[error("The key could not be opened: wrong key password?")]
+    WrongPassword,
+    #[error("This is not a PuTTY key the installer can use: {0}")]
+    Invalid(String),
+}
+
+/// Reads a PuTTY .ppk (version 2 or 3, unencrypted or aes256-cbc) and returns the same key as an unencrypted
+/// OpenSSH private key, which the SSH library can log in with. Ed25519, RSA and ECDSA keys.
+pub fn ppk_to_openssh(text: &str, passphrase: &str) -> Result<String, PpkError> {
+    let invalid = |why: &str| PpkError::Invalid(why.to_string());
+    let text = text.replace("\r\n", "\n");
+    let mut lines = text.lines().map(str::trim_end).peekable();
+    let mut headers: Vec<(String, String)> = Vec::new();
+    let mut public = Vec::new();
+    let mut private = Vec::new();
+    while let Some(line) = lines.next() {
+        let Some((name, value)) = line.split_once(": ") else { continue };
+        let mut read_lines = |count: &str| -> Result<Vec<u8>, PpkError> {
+            let count: usize = count.trim().parse().map_err(|_| invalid("bad line count"))?;
+            let mut base64 = String::new();
+            for _ in 0..count {
+                base64.push_str(lines.next().ok_or_else(|| invalid("the file ends too early"))?.trim());
+            }
+            STANDARD.decode(base64).map_err(|_| invalid("bad base64"))
+        };
+        match name {
+            "Public-Lines" => public = read_lines(value)?,
+            "Private-Lines" => private = read_lines(value)?,
+            _ => headers.push((name.to_string(), value.to_string())),
+        }
+    }
+    let header = |name: &str| headers.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str());
+    let (version, algorithm) = if let Some(alg) = header("PuTTY-User-Key-File-3") {
+        (3, alg)
+    } else if let Some(alg) = header("PuTTY-User-Key-File-2") {
+        (2, alg)
+    } else {
+        return Err(invalid("not a PuTTY-User-Key-File version 2 or 3"));
+    };
+    let encryption = header("Encryption").unwrap_or("none");
+    let comment = header("Comment").unwrap_or("");
+    let mac_hex = header("Private-MAC").ok_or_else(|| invalid("no Private-MAC"))?;
+    let encrypted = match encryption {
+        "none" => false,
+        "aes256-cbc" => true,
+        other => return Err(invalid(&format!("encryption {other} is not supported"))),
+    };
+    if encrypted && passphrase.is_empty() {
+        return Err(PpkError::NeedsPassword);
+    }
+    let secret = passphrase.as_bytes();
+
+    // Key material: v2 from SHA-1, v3 from Argon2 (cipher key, IV and MAC key).
+    let (cipher_key, iv, mac_key): (Vec<u8>, Vec<u8>, Vec<u8>) = if version == 3 {
+        if encrypted {
+            let flavour = match header("Key-Derivation") {
+                Some("Argon2id") => argon2::Algorithm::Argon2id,
+                Some("Argon2i") => argon2::Algorithm::Argon2i,
+                Some("Argon2d") => argon2::Algorithm::Argon2d,
+                _ => return Err(invalid("unknown Key-Derivation")),
+            };
+            let number = |name: &str| header(name).and_then(|v| v.parse::<u32>().ok()).ok_or_else(|| invalid(&format!("no {name}")));
+            let salt = hex::decode(header("Argon2-Salt").unwrap_or("")).map_err(|_| invalid("bad Argon2-Salt"))?;
+            let params = argon2::Params::new(number("Argon2-Memory")?, number("Argon2-Passes")?, number("Argon2-Parallelism")?, Some(80))
+                .map_err(|e| invalid(&e.to_string()))?;
+            let mut out = [0u8; 80];
+            argon2::Argon2::new(flavour, argon2::Version::V0x13, params)
+                .hash_password_into(secret, &salt, &mut out)
+                .map_err(|e| invalid(&e.to_string()))?;
+            (out[..32].to_vec(), out[32..48].to_vec(), out[48..].to_vec())
+        } else {
+            (Vec::new(), Vec::new(), Vec::new())
+        }
+    } else {
+        let mac_key = Sha1::digest([b"putty-private-key-file-mac-key".as_slice(), secret].concat()).to_vec();
+        (putty_cipher_key(secret)[..32].to_vec(), vec![0u8; 16], mac_key)
+    };
+
+    let mut plain = private.clone();
+    if encrypted {
+        use aes::cipher::BlockDecryptMut;
+        if plain.len() % 16 != 0 {
+            return Err(invalid("the private part is not a whole number of blocks"));
+        }
+        let length = plain.len();
+        cbc::Decryptor::<aes::Aes256>::new(cipher_key.as_slice().into(), iv.as_slice().into())
+            .decrypt_padded_mut::<aes::cipher::block_padding::NoPadding>(&mut plain[..length])
+            .map_err(|_| invalid("decryption failed"))?;
+    }
+    let mac_data = blob(|w| {
+        w.string(algorithm);
+        w.string(encryption);
+        w.string(comment);
+        w.bytes(&public);
+        w.bytes(&plain);
+    });
+    let expected = hex::decode(mac_hex.trim()).map_err(|_| invalid("bad Private-MAC"))?;
+    let valid = if version == 3 {
+        let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(&mac_key).expect("any key length");
+        mac.update(&mac_data);
+        mac.verify_slice(&expected).is_ok()
+    } else {
+        let mut mac = <Hmac<Sha1> as Mac>::new_from_slice(&mac_key).expect("any key length");
+        mac.update(&mac_data);
+        mac.verify_slice(&expected).is_ok()
+    };
+    if !valid {
+        return Err(if encrypted { PpkError::WrongPassword } else { invalid("the MAC does not match: the file is damaged") });
+    }
+
+    // PuTTY's private fields -> OpenSSH's.
+    let mut pub_reader = SshReader(&public);
+    let key_type = pub_reader.string().ok_or_else(|| invalid("bad public key"))?;
+    let mut priv_reader = SshReader(&plain);
+    let fields = match key_type.as_str() {
+        "ssh-ed25519" => {
+            let public_key = pub_reader.bytes().ok_or_else(|| invalid("bad public key"))?;
+            let seed = priv_reader.bytes().ok_or_else(|| invalid("bad private key"))?;
+            if seed.len() != 32 || public_key.len() != 32 {
+                return Err(invalid("bad Ed25519 key"));
+            }
+            blob(|w| {
+                w.string("ssh-ed25519");
+                w.bytes(public_key);
+                w.bytes(&[seed, public_key].concat());
+            })
+        }
+        "ssh-rsa" => {
+            let e = pub_reader.bytes().ok_or_else(|| invalid("bad public key"))?;
+            let n = pub_reader.bytes().ok_or_else(|| invalid("bad public key"))?;
+            let mut next = || priv_reader.bytes().ok_or_else(|| invalid("bad private key"));
+            let (d, p, q, iqmp) = (next()?, next()?, next()?, next()?);
+            blob(|w| {
+                w.string("ssh-rsa");
+                for value in [n, e, d, iqmp, p, q] {
+                    w.bytes(value); // already mpint encoded
+                }
+            })
+        }
+        t if t.starts_with("ecdsa-sha2-") => {
+            let curve = pub_reader.bytes().ok_or_else(|| invalid("bad public key"))?;
+            let point = pub_reader.bytes().ok_or_else(|| invalid("bad public key"))?;
+            let d = priv_reader.bytes().ok_or_else(|| invalid("bad private key"))?;
+            blob(|w| {
+                w.string(t);
+                w.bytes(curve);
+                w.bytes(point);
+                w.bytes(d);
+            })
+        }
+        other => return Err(invalid(&format!("key type {other} is not supported"))),
+    };
+    let _ = algorithm;
+    Ok(openssh_private_key(&public, &fields, comment, ""))
+}
+
+struct SshReader<'a>(&'a [u8]);
+
+impl<'a> SshReader<'a> {
+    fn bytes(&mut self) -> Option<&'a [u8]> {
+        if self.0.len() < 4 {
+            return None;
+        }
+        let length = u32::from_be_bytes(self.0[..4].try_into().ok()?) as usize;
+        if self.0.len() < 4 + length {
+            return None;
+        }
+        let value = &self.0[4..4 + length];
+        self.0 = &self.0[4 + length..];
+        Some(value)
+    }
+
+    fn string(&mut self) -> Option<String> {
+        self.bytes().map(|b| String::from_utf8_lossy(b).into_owned())
+    }
+}
+
 pub fn is_private_key(text: &str) -> bool {
     text.contains("PRIVATE KEY") || text.trim_start().starts_with("PuTTY-User-Key-File")
 }
@@ -492,6 +674,36 @@ mod tests {
             .unwrap();
         assert_eq!(putty_mac("ssh-ed25519", "aes256-cbc", "me@pc second line", &public, &stored, b"correct horse"), mac);
         assert_eq!(STANDARD.encode(&public), pair.public_key.base64);
+    }
+
+    /// The OpenSSH key fields after the two check ints, up to the comment.
+    fn openssh_fields(pem: &str, passphrase: &str) -> Vec<u8> {
+        let private = open_openssh(pem, passphrase);
+        private[8..].to_vec()
+    }
+
+    #[test]
+    fn ppk_reads_back_as_the_same_openssh_key() {
+        for key_type in [SshKeyType::Ed25519, SshKeyType::Rsa4096] {
+            let pair = generate(key_type, "me@pc", "secret pass");
+            let converted = ppk_to_openssh(&pair.putty_key, "secret pass").unwrap();
+            let original = openssh_fields(&pair.private_key_pem, "secret pass");
+            let from_ppk = openssh_fields(&converted, "");
+            // Same fields and comment; only the block padding differs (16 encrypted, 8 plain).
+            let unpad = |v: &[u8]| {
+                let mut v = v.to_vec();
+                while v.last().is_some_and(|&b| b != 0 && (b as usize) < 16 && v.ends_with(&(1..=b).collect::<Vec<u8>>())) {
+                    let b = *v.last().unwrap();
+                    v.truncate(v.len() - b as usize);
+                }
+                v
+            };
+            assert_eq!(unpad(&original), unpad(&from_ppk), "{key_type:?}");
+            assert_eq!(ppk_to_openssh(&pair.putty_key, "wrong").unwrap_err(), PpkError::WrongPassword);
+            assert_eq!(ppk_to_openssh(&pair.putty_key, "").unwrap_err(), PpkError::NeedsPassword);
+        }
+        let plain = generate(SshKeyType::Ed25519, "x", "");
+        assert!(ppk_to_openssh(&plain.putty_key, "").is_ok());
     }
 
     #[test]

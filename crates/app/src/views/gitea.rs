@@ -15,7 +15,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::{self, ResultKind};
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 /// What the intro asks, and what detect found for it.
 struct Form {
@@ -110,11 +110,11 @@ fn suggested_email(domain: &str) -> Option<String> {
 /// Why the server is not ready for Gitea, or None. (Missing)
 fn missing(state: &GiteaState) -> Option<&'static str> {
     if state.site.is_none() {
-        Some("Run the Web access step first: Gitea uses its Docker and Traefik.")
+        Some(n("Run the Web access step first: Gitea uses its Docker and Traefik."))
     } else if !state.docker_running {
-        Some("Docker does not run: run the Web access step first.")
+        Some(n("Docker does not run: run the Web access step first."))
     } else if !state.traefik_running {
-        Some("Traefik does not run: run the Web access step first.")
+        Some(n("Traefik does not run: run the Web access step first."))
     } else {
         None
     }

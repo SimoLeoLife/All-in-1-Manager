@@ -22,7 +22,7 @@ use crate::gui::dialogs::Choice;
 use crate::gui::step::{Banner, StepUi};
 use crate::gui::widgets::ResultKind;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 type Result<T> = anyhow::Result<T>;
 
@@ -155,7 +155,7 @@ async fn restart_emulator(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["Restart the emulator"]);
+    let run = job.start_run(&[n("Restart the emulator")]);
     let log = run.logger();
     server_tools::restart_emulator(job.server(), &log).await?;
     run.done(t("loaded"));
@@ -164,7 +164,7 @@ async fn restart_emulator(job: &Job) -> Result<()> {
 }
 
 async fn restart_mariadb(job: &Job) -> Result<()> {
-    let run = job.start_run(&["Restart MariaDB"]);
+    let run = job.start_run(&[n("Restart MariaDB")]);
     let log = run.logger();
     server_tools::restart_mariadb(job.server(), &log).await?;
     run.done(t("running"));
@@ -177,7 +177,7 @@ async fn restart_mariadb(job: &Job) -> Result<()> {
 }
 
 async fn restart_nginx(job: &Job) -> Result<()> {
-    let run = job.start_run(&["Restart NGINX and PHP-FPM"]);
+    let run = job.start_run(&[n("Restart NGINX and PHP-FPM")]);
     let log = run.logger();
     server_tools::restart_nginx(job.server(), &log).await?;
     run.done(t("running"));
@@ -186,7 +186,7 @@ async fn restart_nginx(job: &Job) -> Result<()> {
 }
 
 async fn restart_traefik(job: &Job) -> Result<()> {
-    let run = job.start_run(&["Restart Traefik"]);
+    let run = job.start_run(&[n("Restart Traefik")]);
     let log = run.logger();
     server_tools::restart_traefik(job.server(), &log).await?;
     run.done(t("running"));
@@ -195,7 +195,7 @@ async fn restart_traefik(job: &Job) -> Result<()> {
 }
 
 async fn enable_firewall(job: &Job) -> Result<()> {
-    let run = job.start_run(&["Enable the firewall"]);
+    let run = job.start_run(&[n("Enable the firewall")]);
     let log = run.logger();
     let fresh = harden::enable_firewall(job.server(), &log).await?;
     run.done(t("active"));
@@ -219,7 +219,7 @@ async fn disable_firewall(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["Disable the firewall"]);
+    let run = job.start_run(&[n("Disable the firewall")]);
     let log = run.logger();
     harden::disable_firewall(job.server(), &log).await?;
     run.done(t("inactive"));
@@ -238,7 +238,7 @@ async fn restart_all(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["MariaDB", "Emulator", "NGINX and PHP-FPM", "Traefik"]);
+    let run = job.start_run(&[n("MariaDB"), n("Emulator"), n("NGINX and PHP-FPM"), n("Traefik")]);
     let log = run.logger();
     let server = job.server();
     // MariaDB first, so the emulator starts with fresh connections.
@@ -319,10 +319,10 @@ async fn fail2ban_tool(job: &Job) -> Result<()> {
     let ssh_ports: Vec<i32> = if state.ssh_ports.is_empty() { vec![job.server.login().port as i32] } else { state.ssh_ports.clone() };
     let mut checks = Vec::new();
     if changes.whitelist.is_some() {
-        checks.push("Save the whitelist and restart fail2ban");
+        checks.push(n("Save the whitelist and restart fail2ban"));
     }
     if !changes.unban.is_empty() {
-        checks.push("Unban");
+        checks.push(n("Unban"));
     }
     let run = job.start_run(&checks);
     let log = run.logger();
@@ -374,10 +374,10 @@ async fn crowdsec_tool(job: &Job) -> Result<()> {
     let Some(changes) = modals::ask_whitelist(&job.state, &job.shared.ctx, question).await else { return Ok(()) };
     let mut checks = Vec::new();
     if changes.whitelist.is_some() {
-        checks.push("Save the whitelist");
+        checks.push(n("Save the whitelist"));
     }
     if !changes.unban.is_empty() {
-        checks.push("Unban");
+        checks.push(n("Unban"));
     }
     let run = job.start_run(&checks);
     let log = run.logger();
@@ -415,7 +415,7 @@ async fn backup_database(job: &Job) -> Result<()> {
     let local = target.path().to_path_buf();
     let server = job.server();
 
-    let run = job.start_run(&["Dump the database on the server", "Download to this computer"]);
+    let run = job.start_run(&[n("Dump the database on the server"), n("Download to this computer")]);
     let log = run.logger();
     let backup = server_tools::backup_database(server, &log).await?;
     run.done(&format!("{}, {}", backup.database, size(backup.bytes)));
@@ -465,7 +465,7 @@ async fn import_database(job: &Job) -> Result<()> {
         return Ok(());
     }
     let server = job.server();
-    let run = job.start_run(&["Upload to the server", "Safety backup, import, start the emulator"]);
+    let run = job.start_run(&[n("Upload to the server"), n("Safety backup, import, start the emulator")]);
     let log = run.logger();
     let remote = format!("{directory}/import-{}{}", config_dir::timestamp(), dump_extension(&local));
     server.run_as_root(&format!("install -d -m 700 {directory}")).await?;
@@ -521,7 +521,7 @@ async fn import_plus(job: &Job) -> Result<()> {
 
     let server = job.server();
     let directory = server_tools::backup_directory();
-    let run = job.start_run(&["Upload to the server", "Safety backup, convert to Polaris, start the emulator"]);
+    let run = job.start_run(&[n("Upload to the server"), n("Safety backup, convert to Polaris, start the emulator")]);
     let log = run.logger();
     let remote = format!("{directory}/plus-import-{}{}", config_dir::timestamp(), dump_extension(&local));
     server.run_as_root(&format!("install -d -m 700 {directory}")).await?;
@@ -571,7 +571,7 @@ async fn recover_sql_password(job: &Job) -> Result<()> {
     }
 
     let server = job.server();
-    let run = job.start_run(&["Reset the root password on the server", "Test the new password", "Save it in the configuration folder"]);
+    let run = job.start_run(&[n("Reset the root password on the server"), n("Test the new password"), n("Save it in the configuration folder")]);
     let log = run.logger();
     let credentials = match saved {
         Some(saved) => DatabaseCredentials { root_password: aio_core::credentials::new_password(), ..saved },
@@ -630,7 +630,7 @@ async fn recover_sql_password(job: &Job) -> Result<()> {
 /// changed, so this is safe while the hotel is open.
 async fn check_updates(job: &Job) -> Result<()> {
     let server = job.server();
-    let run = job.start_run(&["git fetch every clone"]);
+    let run = job.start_run(&[n("git fetch every clone")]);
     let log = run.logger();
     let updates = server_status::updates(server).await?;
     let images = load_images(server).await?;
@@ -719,7 +719,7 @@ async fn fix_visitor_ips(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["Polaris: trust Cloudflare's ranges", "NGINX: real IP past Cloudflare", "Weekly refresh, Traefik"]);
+    let run = job.start_run(&[n("Polaris: trust Cloudflare's ranges"), n("NGINX: real IP past Cloudflare"), n("Weekly refresh, Traefik")]);
     let log = run.logger();
     let polaris = web_access::configure_polaris(server, &site, &log).await?;
     run.done(if polaris { "ws.ip.header.trusted" } else { t("emulator not set up yet") });
@@ -739,7 +739,7 @@ async fn fix_visitor_ips(job: &Job) -> Result<()> {
 }
 
 async fn update_system(job: &Job) -> Result<()> {
-    let run = job.start_run(&["apt-get update, upgrade and dist-upgrade"]);
+    let run = job.start_run(&[n("apt-get update, upgrade and dist-upgrade")]);
     let log = run.logger();
     let reboot = server_tools::update_system(job.server(), &log).await?;
     run.done(if reboot { t("reboot needed") } else { t("up to date") });
@@ -772,7 +772,7 @@ async fn update_emulator(job: &Job) -> Result<()> {
         return Ok(());
     }
     let server = job.server();
-    let run = job.start_run(&["git pull", "build.sh", "Start the new version"]);
+    let run = job.start_run(&[n("git pull"), n("build.sh"), n("Start the new version")]);
     let log = run.logger();
     let (old_commit, old_version) = server_tools::emulator_version(server).await?;
     let commit = git_clone::update(server, &repository, branch.as_deref(), &log).await?;
@@ -830,12 +830,12 @@ async fn update_emulator(job: &Job) -> Result<()> {
 async fn update_octane(job: &Job) -> Result<()> {
     let server = job.server();
     let run = job.start_run(&[
-        "git pull Octane-Renderer and Octane",
-        "Octane-Renderer: fresh yarn install",
-        "Octane: fresh yarn install",
-        "Configuration for the site",
-        "yarn build",
-        "Serve and test",
+        n("git pull Octane-Renderer and Octane"),
+        n("Octane-Renderer: fresh yarn install"),
+        n("Octane: fresh yarn install"),
+        n("Configuration for the site"),
+        n("yarn build"),
+        n("Serve and test"),
     ]);
     let log = run.logger();
     let state = octane::inspect(server).await?;
@@ -884,7 +884,7 @@ async fn update_traefik(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["docker compose pull and up -d"]);
+    let run = job.start_run(&[n("docker compose pull and up -d")]);
     let log = run.logger();
     server_tools::update_traefik(job.server(), &log).await?;
     run.done(t("runs"));
@@ -910,7 +910,7 @@ async fn update_gitea(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["docker compose pull and up -d"]);
+    let run = job.start_run(&[n("docker compose pull and up -d")]);
     let log = run.logger();
     gitea::update(server, &log).await?;
     run.done(t("runs"));
@@ -942,7 +942,7 @@ async fn update_crowdsec(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["docker compose pull and up -d, then the detection rules"]);
+    let run = job.start_run(&[n("docker compose pull and up -d, then the detection rules")]);
     let log = run.logger();
     crowdsec::update(server, &log).await?;
     run.done(t("runs"));
@@ -978,7 +978,7 @@ async fn update_atom_cms(job: &Job) -> Result<()> {
     {
         return Ok(());
     }
-    let run = job.start_run(&["git pull", "composer install", "Database migrations", "Theme build"]);
+    let run = job.start_run(&[n("git pull"), n("composer install"), n("Database migrations"), n("Theme build")]);
     let log = run.logger();
     let commit = git_clone::update(server, &directory, None, &log).await?;
     run.done(&commit);

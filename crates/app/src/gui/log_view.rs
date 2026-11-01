@@ -5,7 +5,7 @@
 use eframe::egui::{self, Color32, RichText};
 
 use super::theme::{hex, Fixed};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 /// The lines of a log, joined once per change for the view.
 #[derive(Default, Clone)]
@@ -111,7 +111,7 @@ pub fn show(ui: &mut egui::Ui, id: &str, log: &mut LogLines, height: Option<f32>
         let caption = if now < label.until {
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
             if label.copied > 0 {
-                tf(if label.copied == 1 { "Copied {n} line" } else { "Copied {n} lines" }, &[("n", &label.copied.to_string())])
+                tf(if label.copied == 1 { n("Copied {n} line") } else { n("Copied {n} lines") }, &[("n", &label.copied.to_string())])
             } else {
                 t("Nothing to copy").to_string()
             }

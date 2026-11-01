@@ -20,7 +20,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::{self, ResultKind};
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 struct Form {
     from_git: bool,
@@ -204,12 +204,12 @@ impl InstallStep for CustomCmsStep {
 
     fn checks(&self) -> Vec<String> {
         [
-            "Check the server",
-            "Get the CMS",
-            "Check the root folder",
-            "Octane on /client: configure and build",
-            "NGINX (own port) and Traefik",
-            "Test the CMS, /client and /api",
+            n("Check the server"),
+            n("Get the CMS"),
+            n("Check the root folder"),
+            n("Octane on /client: configure and build"),
+            n("NGINX (own port) and Traefik"),
+            n("Test the CMS, /client and /api"),
         ]
         .iter()
         .map(|c| t(c).to_string())

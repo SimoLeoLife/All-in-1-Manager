@@ -13,25 +13,25 @@ use crate::gui::icons::Icon;
 use crate::gui::step::{InstallStep, Intro, StepOutcome, StepUi};
 use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 /// Polaris, Octane and Octane-Renderer, as ServerWizard.ServerSteps builds them.
 pub fn steps() -> Vec<Arc<dyn InstallStep>> {
     vec![
         Arc::new(CloneStep::new(
             "Polaris",
-            "Emulator",
+            n("Emulator"),
             "duckietm/Polaris-Emulator",
             emulator::repository,
-            "The Polaris game server (emulator): Java sources, the database and the hotel assets.",
+            n("The Polaris game server (emulator): Java sources, the database and the hotel assets."),
         )),
-        Arc::new(CloneStep::new("Octane", "Client", "duckietm/Octane", octane::octane, "The Octane browser client: the hotel's user interface.")),
+        Arc::new(CloneStep::new("Octane", n("Client"), "duckietm/Octane", octane::octane, n("The Octane browser client: the hotel's user interface."))),
         Arc::new(CloneStep::new(
             "Renderer",
-            "Octane-Renderer",
+            n("Octane-Renderer"),
             "duckietm/Octane-Renderer",
             octane::renderer,
-            "The Octane Renderer: draws rooms, avatars and furniture for Octane.",
+            n("The Octane Renderer: draws rooms, avatars and furniture for Octane."),
         )),
     ]
 }

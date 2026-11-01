@@ -14,7 +14,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 struct Form {
     delete_files: bool,
@@ -106,7 +106,7 @@ impl InstallStep for RemoveCmsStep {
     }
 
     fn checks(&self) -> Vec<String> {
-        ["Check the server", "Octane on /: configure and build", "NGINX and Traefik", "Disable the CMS site", "Test the site, /api and /ws"]
+        [n("Check the server"), n("Octane on /: configure and build"), n("NGINX and Traefik"), n("Disable the CMS site"), n("Test the site, /api and /ws")]
             .iter()
             .map(|c| t(c).to_string())
             .collect()

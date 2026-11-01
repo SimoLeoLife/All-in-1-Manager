@@ -13,7 +13,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 /// The settings as typed on the intro.
 struct Form {
@@ -136,9 +136,9 @@ fn join(ports: &[i32]) -> String {
 
 fn entries(count: usize) -> &'static str {
     if count == 1 {
-        "{count} whitelist entry; edit them later in Tools → Fail2Ban."
+        n("{count} whitelist entry; edit them later in Tools → Fail2Ban.")
     } else {
-        "{count} whitelist entries; edit them later in Tools → Fail2Ban."
+        n("{count} whitelist entries; edit them later in Tools → Fail2Ban.")
     }
 }
 

@@ -17,7 +17,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 struct Form {
     git_url: String,
@@ -115,13 +115,13 @@ impl InstallStep for EpicNextStep {
 
     fn checks(&self) -> Vec<String> {
         [
-            "Check the server",
-            "Get EpicNext",
-            "Node.js, pnpm and .env",
-            "pnpm install, migrate and build",
-            "Octane on /client: configure and build",
-            "Start EpicNext, NGINX (own port) and Traefik",
-            "Test the CMS, /client and /api",
+            n("Check the server"),
+            n("Get EpicNext"),
+            n("Node.js, pnpm and .env"),
+            n("pnpm install, migrate and build"),
+            n("Octane on /client: configure and build"),
+            n("Start EpicNext, NGINX (own port) and Traefik"),
+            n("Test the CMS, /client and /api"),
         ]
         .iter()
         .map(|c| t(c).to_string())

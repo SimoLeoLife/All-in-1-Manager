@@ -18,7 +18,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 /// The client images of Program/Assets, packed into the binary by build.rs (entries relative to Assets/).
 static CLIENT_ASSETS: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/ClientAssets.zip"));
@@ -161,7 +161,7 @@ impl InstallStep for AssetSyncStep {
     }
 
     fn checks(&self) -> Vec<String> {
-        ["Compare the downloader with the server", "Check the free space", "Upload new and changed files", "Permissions (www-data)"]
+        [n("Compare the downloader with the server"), n("Check the free space"), n("Upload new and changed files"), n("Permissions (www-data)")]
             .iter()
             .map(|c| t(c).to_string())
             .collect()
@@ -176,7 +176,7 @@ impl InstallStep for AssetSyncStep {
         }
         if !form.rows.is_empty() {
             egui::Grid::new("asset_sync_plans").num_columns(4).spacing(egui::vec2(16.0, 6.0)).show(ui, |ui| {
-                for heading in ["Folder", "Server", "Here", "To upload"] {
+                for heading in [n("Folder"), n("Server"), n("Here"), n("To upload")] {
                     small(ui, t(heading), 11.5, palette.muted, true);
                 }
                 ui.end_row();
@@ -561,6 +561,18 @@ async fn local_assets() -> anyhow::Result<PathBuf> {
     Ok(into)
 }
 
+// The names and purposes of the fixed folders in aio_remote::emulator_assets (shown through t() in the rows), copied
+// here so tools/i18n_keys.py collects them. Keep in step with emulator_assets::fixed and folders_in.
+const _: [&str; 7] = [
+    n("Client images"),
+    n("loading_icon / clear_icon / big_arrow (Octane preloads them), wallet, navigator and catalogue extras"),
+    n("Hotel view"),
+    n("the hotel view's background, sun, drape and sides (ui-config's c_images/reception)"),
+    n("Group badge parts"),
+    n("the parts of group badges, for Octane and the emulator's badge imager"),
+    n("Game images (c_images)"),
+];
+
 #[derive(Clone)]
 struct AssetRow {
     name: String,
@@ -669,7 +681,7 @@ impl InstallStep for EmulatorAssetsStep {
         }
         ui.add_space(2.0);
         egui::Grid::new("emulator_assets_states").num_columns(3).spacing(egui::vec2(16.0, 6.0)).show(ui, |ui| {
-            for heading in ["Folder", "Server", "Missing"] {
+            for heading in [n("Folder"), n("Server"), n("Missing")] {
                 small(ui, t(heading), 11.5, palette.muted, true);
             }
             ui.end_row();

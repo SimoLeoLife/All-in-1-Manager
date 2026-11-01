@@ -13,31 +13,31 @@ use crate::gui::icons::{self, Icon};
 use crate::gui::theme::Palette;
 use crate::gui::widgets::{self, ResultKind};
 use crate::gui::wizard::{FinishInfo, FinishPage, StepSummary};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 pub type Steps = Vec<(String, StepSummary)>;
 
 /// Every folder of /var/www/gamedata and what goes in it (the layout the Octane step configures).
 pub const ASSETS: [(&str, &str); 19] = [
-    ("config/", "FurnitureData.json, ProductData.json, FigureData.json, FigureMap.json, EffectMap.json, HabboAvatarActions.json, ExternalTexts.json, UITexts.jsonc"),
-    ("furniture/", "furniture bundles (<name>.hab)"),
-    ("clothes/", "clothing bundles (<name>.hab)"),
-    ("effect/", "avatar effect bundles (<name>.hab)"),
-    ("pets/", "pet bundles (<name>.hab)"),
-    ("bundled/generic/", "generic bundles (<name>.hab)"),
-    ("room/", "room bundles (room/<name>/<name>.json)"),
-    ("icons/", "furniture icons (<name>_icon.png)"),
-    ("images/", "loading_icon.png, clear_icon.png, big_arrow.png, reception/ (hotel view) and wallet/ (currency icons)"),
-    ("sounds/", "sounds (<sample>.mp3, sound_machine_sample_<n>.mp3)"),
-    ("c_images/album1584/", "badges (<code>.gif); custom badges are added here by the emulator"),
-    ("c_images/catalogue/", "catalogue headers and icons (<name>.gif, icon_<n>.png)"),
-    ("c_images/reception/", "login screen (stretch_blue.png, sun.png, drape.png, ts.png, US_right.png ...)"),
-    ("c_images/notifications/, Quests/, fx_icons/, habboway/, web_promo_small/, album1358/", "notification, achievement, effect and promo images"),
-    ("c_images/groupbadge/badgeparts/", "group badge parts (badgepart_<part>.png)"),
-    ("habbopages/", "the hotel's help/info pages"),
-    ("custom/", "your own extra files (served as /custom/)"),
-    ("news/news.json", "login screen news (a welcome message is already there)"),
-    ("camera/, c_images/groupbadge/badge/", "filled by the emulator: do not upload"),
+    ("config/", n("FurnitureData.json, ProductData.json, FigureData.json, FigureMap.json, EffectMap.json, HabboAvatarActions.json, ExternalTexts.json, UITexts.jsonc")),
+    ("furniture/", n("furniture bundles (<name>.hab)")),
+    ("clothes/", n("clothing bundles (<name>.hab)")),
+    ("effect/", n("avatar effect bundles (<name>.hab)")),
+    ("pets/", n("pet bundles (<name>.hab)")),
+    ("bundled/generic/", n("generic bundles (<name>.hab)")),
+    ("room/", n("room bundles (room/<name>/<name>.json)")),
+    ("icons/", n("furniture icons (<name>_icon.png)")),
+    ("images/", n("loading_icon.png, clear_icon.png, big_arrow.png, reception/ (hotel view) and wallet/ (currency icons)")),
+    ("sounds/", n("sounds (<sample>.mp3, sound_machine_sample_<n>.mp3)")),
+    ("c_images/album1584/", n("badges (<code>.gif); custom badges are added here by the emulator")),
+    ("c_images/catalogue/", n("catalogue headers and icons (<name>.gif, icon_<n>.png)")),
+    ("c_images/reception/", n("login screen (stretch_blue.png, sun.png, drape.png, ts.png, US_right.png ...)")),
+    ("c_images/notifications/, Quests/, fx_icons/, habboway/, web_promo_small/, album1358/", n("notification, achievement, effect and promo images")),
+    ("c_images/groupbadge/badgeparts/", n("group badge parts (badgepart_<part>.png)")),
+    ("habbopages/", n("the hotel's help/info pages")),
+    ("custom/", n("your own extra files (served as /custom/)")),
+    ("news/news.json", n("login screen news (a welcome message is already there)")),
+    ("camera/, c_images/groupbadge/badge/", n("filled by the emulator: do not upload")),
 ];
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -245,7 +245,7 @@ fn after_upload(ui: &mut egui::Ui, palette: &Palette, site: Option<&WebAccessSet
     colored(ui, t("Log in again to get the rank. Changed the Octane configuration? Rebuild it with /var/www/Octane/build.sh."), 12.0, palette.subtle);
 }
 
-const RUN_AGAIN: &str = "Run the step again (see the step for what went wrong).";
+const RUN_AGAIN: &str = n("Run the step again (see the step for what went wrong).");
 
 // ---------------------------------------------------------------------------------------------------------------
 // The pages

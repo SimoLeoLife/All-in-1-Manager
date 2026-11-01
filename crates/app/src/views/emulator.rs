@@ -12,7 +12,7 @@ use crate::gui::icons::Icon;
 use crate::gui::step::{InstallStep, Intro, StepOutcome, StepUi};
 use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 const MEMORY_CHOICES_MB: [i32; 8] = [1024, 2048, 3072, 4096, 6144, 8192, 12288, 16384];
 
@@ -97,10 +97,10 @@ fn default_whitelist(host: &str) -> String {
 fn whitelist_problem(list: &str) -> Option<&'static str> {
     let list = list.trim();
     if list.is_empty() {
-        return Some("Enter at least one host for the websocket whitelist (e.g. localhost).");
+        return Some(n("Enter at least one host for the websocket whitelist (e.g. localhost)."));
     }
     if list.split(',').any(|h| h.trim().contains(' ') || h.trim().contains("://")) {
-        return Some("The whitelist holds host names only (no spaces or http://), separated by commas.");
+        return Some(n("The whitelist holds host names only (no spaces or http://), separated by commas."));
     }
     None
 }

@@ -19,10 +19,10 @@ use crate::gui::icons::{self, Icon};
 use crate::gui::step::{self, InstallStep, Intro, StepOutcome, StepUi};
 use crate::gui::theme::Palette;
 use crate::gui::widgets::{self, ResultKind};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 const MINIMUM_PASSPHRASE_LENGTH: usize = 8;
-const KEY_TYPES: [&str; 2] = ["Ed25519 (recommended)", "RSA 4096 (older clients)"];
+const KEY_TYPES: [&str; 2] = [n("Ed25519 (recommended)"), n("RSA 4096 (older clients)")];
 
 pub fn step() -> Arc<dyn InstallStep> {
     Arc::new(SshKeyStep { form: Arc::new(Mutex::new(Form { generate: true, ..Default::default() })) })

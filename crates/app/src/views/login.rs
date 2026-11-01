@@ -20,7 +20,7 @@ use crate::gui::log_view::{self, LogLines};
 use crate::gui::theme::{self, Fixed, Palette};
 use crate::gui::widgets::{self, ResultKind};
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 /// What the opener carries: a request to open the login, and the update question shown before it.
 #[derive(Default)]
@@ -723,21 +723,21 @@ pub(crate) fn is_valid_server(text: &str) -> bool {
 /// What is wrong with the server and the account (English, for `t`), or None.
 fn target_problem(host: &str, user: &str) -> Option<&'static str> {
     if host.trim().is_empty() {
-        return Some("Enter the server IP address or hostname.");
+        return Some(n("Enter the server IP address or hostname."));
     }
     let (server, port) = ServerLogin::parse_host(host);
     if server.is_empty() || server.chars().any(char::is_whitespace) || !is_host_name(&server) {
-        return Some("That is not a valid IP address or hostname.");
+        return Some(n("That is not a valid IP address or hostname."));
     }
     if port < 1 {
-        return Some("The SSH port must be between 1 and 65535.");
+        return Some(n("The SSH port must be between 1 and 65535."));
     }
     let account = user.trim();
     if account.is_empty() {
-        return Some("Enter the user account to log in with.");
+        return Some(n("Enter the user account to log in with."));
     }
     if account.chars().any(|c| c.is_whitespace() || c == ':' || c == '@') {
-        return Some("A user name cannot contain spaces, ':' or '@'.");
+        return Some(n("A user name cannot contain spaces, ':' or '@'."));
     }
     None
 }

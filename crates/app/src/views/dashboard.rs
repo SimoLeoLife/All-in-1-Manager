@@ -12,7 +12,7 @@ use super::tools::{Component, ToolsView};
 use crate::gui::icons::{self, Icon};
 use crate::gui::theme::{self, hex, with_alpha, Fixed, Palette};
 use crate::gui::{banner, widgets, Page, Request, Shared};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 pub enum Click {
     Login,
@@ -21,7 +21,7 @@ pub enum Click {
 
 /// What a full server installation puts on the server.
 pub const COMPONENTS: [(&str, &str, &str, Icon, &str); 3] = [
-    ("Polaris Emulator", "Java 25 game server with a MariaDB database", "duckietm/Polaris-Emulator", Icon::Server, "#4F5FE6"),
+    ("Polaris Emulator", n("Java 25 game server with a MariaDB database"),"duckietm/Polaris-Emulator", Icon::Server, "#4F5FE6"),
     ("Octane", "React browser client (navigator, catalog, chat ...)", "duckietm/Octane", Icon::Cube, "#8B5CF6"),
     ("Octane Renderer", "Draws rooms, avatars and furniture for Octane", "duckietm/Octane-Renderer", Icon::Star, "#0E9F9E"),
 ];

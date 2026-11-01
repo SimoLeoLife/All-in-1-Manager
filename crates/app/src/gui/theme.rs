@@ -19,7 +19,7 @@ pub fn set_hotel(hotel: bool) {
 }
 
 pub fn look_name(hotel: bool) -> &'static str {
-    if hotel { "hotel" } else { "professional" }
+    if hotel { crate::i18n::n("hotel") } else { crate::i18n::n("professional") }
 }
 
 /// settings.json `Look`.

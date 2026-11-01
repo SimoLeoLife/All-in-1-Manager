@@ -6,14 +6,14 @@ use eframe::egui::{self, RichText};
 
 use crate::gui::theme::Palette;
 use crate::gui::{widgets, Shared, View};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 use crate::update;
 
 /// Who made what, in the order they joined in.
 const CREDITS: [(&str, &str); 3] = [
-    ("DuckieTM", "The installer, and the All-in-1 Converter this look and feel comes from."),
-    ("Life", "The branch choice (main / dev) for the clone steps and in Settings, the update check for the hotel's repositories, and the installer's own update at startup."),
-    ("Simo", "The Rust port: one program for Windows and Linux, the window in nine languages, and the dry-run mode."),
+    ("DuckieTM", n("The installer, and the All-in-1 Converter this look and feel comes from.")),
+    ("Life", n("The branch choice (main / dev) for the clone steps and in Settings, the update check for the hotel's repositories, and the installer's own update at startup.")),
+    ("Simo", n("The Rust port: one program for Windows and Linux, the window in nine languages, and the dry-run mode.")),
 ];
 
 pub struct AboutView {

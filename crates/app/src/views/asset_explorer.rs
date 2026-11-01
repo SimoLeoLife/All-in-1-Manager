@@ -22,7 +22,7 @@ use crate::gui::icons::{self, Icon};
 use crate::gui::theme::{self, Palette};
 use crate::gui::widgets;
 use crate::gui::{Page, Request, Shared, View};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 const IMAGE_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "bmp", "webp"];
 const ROW_HEIGHT: f32 = 22.0;
@@ -276,6 +276,10 @@ fn date(modified: Option<DateTime<Local>>) -> String {
 fn home() -> String {
     std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default()
 }
+
+// The text aio_remote::gamedata_files::name_problem returns (shown through t() below), copied here so
+// tools/i18n_keys.py collects it. Keep in step with gamedata_files.
+const _: &str = n("The name in the console: letters, digits, '.', '-' and '_', at most 64.");
 
 /// What is wrong with a new name, or None (NameProblem in the C#).
 fn name_problem(name: &str, local: bool, existing: &[String]) -> Option<String> {

@@ -22,7 +22,7 @@ use crate::gui::step::{self, Banner, StepUi};
 use crate::gui::theme::{self, Fixed, Palette};
 use crate::gui::widgets::{self, ResultKind};
 use crate::gui::{Page, Request, Shared, View};
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 use crate::views::emulator_monitor::EmulatorMonitorView;
 use crate::views::server_status::ServerStatusView;
 use crate::views::terminal::TerminalView;
@@ -72,31 +72,31 @@ impl Tool {
     /// Title (English key), description (English key) and icon, as in ToolsView.BuildWorkspace.
     fn info(self) -> (&'static str, &'static str, Icon) {
         match self {
-            Tool::ServerStatus => ("Server status", "Live CPU, memory, network, disks, users, versions", Icon::Info),
-            Tool::EmulatorMonitor => ("Emulator & wired", "CPU per wired thread and thread group, rooms with slow wired", Icon::Cog),
-            Tool::Terminal => ("SSH terminal", "A shell (command line) on the server, in this window", Icon::Console),
-            Tool::RestartEmulator => ("Restart emulator", "Disconnects everyone in the hotel", Icon::History),
-            Tool::RestartMariaDb => ("Restart MariaDB", "The emulator reconnects by itself", Icon::Database),
-            Tool::RestartNginx => ("Restart NGINX", "And PHP-FPM (AtomCMS)", Icon::Globe),
-            Tool::RestartTraefik => ("Restart Traefik", "The Docker container on 80/443", Icon::Swap),
-            Tool::RestartAll => ("Restart all", "MariaDB, emulator, NGINX, Traefik", Icon::Play),
-            Tool::FixVisitorIps => ("Fix visitor IPs", "The players' real IP behind Cloudflare: Traefik, NGINX and Polaris", Icon::Globe),
-            Tool::EnableFirewall => ("Enable firewall", "ufw on: SSH, 80 and 443 only (the Harden step's rules)", Icon::Shield),
-            Tool::DisableFirewall => ("Disable firewall", "ufw off: every port is reachable again", Icon::Alert),
-            Tool::Fail2Ban => ("Whitelist and bans", "Edit the addresses that are never banned; see and lift SSH bans", Icon::Shield),
-            Tool::CrowdSec => ("CrowdSec whitelist and bans", "Addresses never banned; see and lift CrowdSec's bans", Icon::Shield),
-            Tool::BackupDatabase => ("Create full database backup", "Dump on the server, download to this computer", Icon::Download),
-            Tool::ImportDatabase => ("Import full database", "Replace the hotel database with a backup", Icon::Folder),
-            Tool::ImportPlus => ("Import Plus database", "PlusEMU furniture and catalog into Polaris", Icon::Swap),
-            Tool::RecoverSqlPassword => ("Recover SQL password", "New MariaDB root password, saved in configuration", Icon::Key),
-            Tool::CheckUpdates => ("Check for updates", "git fetch: what is new for the emulator, Octane and AtomCMS", Icon::Download),
-            Tool::UpdateSystem => ("Update system", "apt update, upgrade and dist-upgrade", Icon::Cog),
-            Tool::UpdateEmulator => ("Update emulator", "git pull, build.sh, start the new version", Icon::Server),
-            Tool::UpdateOctane => ("Update Octane", "Octane-Renderer first, then Octane: git pull, fresh yarn install, build", Icon::Cube),
-            Tool::UpdateAtomCms => ("Update AtomCMS", "git pull, composer install, migrations, theme build", Icon::Puzzle),
-            Tool::UpdateTraefik => ("Update Traefik", "The newest traefik:v3 image (Docker Hub)", Icon::Swap),
-            Tool::UpdateGitea => ("Update Gitea", "The newest gitea/gitea:1 image; the repositories stay", Icon::Git),
-            Tool::UpdateCrowdSec => ("Update CrowdSec", "The newest image and detection rules; bans and enrollment stay", Icon::Shield),
+            Tool::ServerStatus => (n("Server status"), n("Live CPU, memory, network, disks, users, versions"), Icon::Info),
+            Tool::EmulatorMonitor => (n("Emulator & wired"), n("CPU per wired thread and thread group, rooms with slow wired"), Icon::Cog),
+            Tool::Terminal => (n("SSH terminal"), n("A shell (command line) on the server, in this window"), Icon::Console),
+            Tool::RestartEmulator => (n("Restart emulator"), n("Disconnects everyone in the hotel"), Icon::History),
+            Tool::RestartMariaDb => (n("Restart MariaDB"), n("The emulator reconnects by itself"), Icon::Database),
+            Tool::RestartNginx => (n("Restart NGINX"), n("And PHP-FPM (AtomCMS)"), Icon::Globe),
+            Tool::RestartTraefik => (n("Restart Traefik"), n("The Docker container on 80/443"), Icon::Swap),
+            Tool::RestartAll => (n("Restart all"), n("MariaDB, emulator, NGINX, Traefik"), Icon::Play),
+            Tool::FixVisitorIps => (n("Fix visitor IPs"), n("The players' real IP behind Cloudflare: Traefik, NGINX and Polaris"), Icon::Globe),
+            Tool::EnableFirewall => (n("Enable firewall"), n("ufw on: SSH, 80 and 443 only (the Harden step's rules)"), Icon::Shield),
+            Tool::DisableFirewall => (n("Disable firewall"), n("ufw off: every port is reachable again"), Icon::Alert),
+            Tool::Fail2Ban => (n("Whitelist and bans"), n("Edit the addresses that are never banned; see and lift SSH bans"), Icon::Shield),
+            Tool::CrowdSec => (n("CrowdSec whitelist and bans"), n("Addresses never banned; see and lift CrowdSec's bans"), Icon::Shield),
+            Tool::BackupDatabase => (n("Create full database backup"), n("Dump on the server, download to this computer"), Icon::Download),
+            Tool::ImportDatabase => (n("Import full database"), n("Replace the hotel database with a backup"), Icon::Folder),
+            Tool::ImportPlus => (n("Import Plus database"), n("PlusEMU furniture and catalog into Polaris"), Icon::Swap),
+            Tool::RecoverSqlPassword => (n("Recover SQL password"), n("New MariaDB root password, saved in configuration"), Icon::Key),
+            Tool::CheckUpdates => (n("Check for updates"), n("git fetch: what is new for the emulator, Octane and AtomCMS"), Icon::Download),
+            Tool::UpdateSystem => (n("Update system"), n("apt update, upgrade and dist-upgrade"), Icon::Cog),
+            Tool::UpdateEmulator => (n("Update emulator"), n("git pull, build.sh, start the new version"), Icon::Server),
+            Tool::UpdateOctane => (n("Update Octane"), n("Octane-Renderer first, then Octane: git pull, fresh yarn install, build"), Icon::Cube),
+            Tool::UpdateAtomCms => (n("Update AtomCMS"), n("git pull, composer install, migrations, theme build"), Icon::Puzzle),
+            Tool::UpdateTraefik => (n("Update Traefik"), n("The newest traefik:v3 image (Docker Hub)"), Icon::Swap),
+            Tool::UpdateGitea => (n("Update Gitea"), n("The newest gitea/gitea:1 image; the repositories stay"), Icon::Git),
+            Tool::UpdateCrowdSec => (n("Update CrowdSec"), n("The newest image and detection rules; bans and enrollment stay"), Icon::Shield),
         }
     }
 
@@ -122,15 +122,15 @@ impl Tool {
 
 /// The sections of the page, in order.
 const SECTIONS: [(&str, &[Tool]); 8] = [
-    ("Status", &[Tool::ServerStatus, Tool::EmulatorMonitor, Tool::Terminal]),
-    ("Services", &[Tool::RestartEmulator, Tool::RestartMariaDb, Tool::RestartNginx, Tool::RestartTraefik, Tool::RestartAll]),
-    ("Visitors", &[Tool::FixVisitorIps]),
-    ("Firewall", &[Tool::EnableFirewall, Tool::DisableFirewall]),
-    ("Fail2Ban", &[Tool::Fail2Ban]),
-    ("CrowdSec", &[Tool::CrowdSec]),
-    ("Database", &[Tool::BackupDatabase, Tool::ImportDatabase, Tool::ImportPlus, Tool::RecoverSqlPassword]),
+    (n("Status"), &[Tool::ServerStatus, Tool::EmulatorMonitor, Tool::Terminal]),
+    (n("Services"), &[Tool::RestartEmulator, Tool::RestartMariaDb, Tool::RestartNginx, Tool::RestartTraefik, Tool::RestartAll]),
+    (n("Visitors"), &[Tool::FixVisitorIps]),
+    (n("Firewall"), &[Tool::EnableFirewall, Tool::DisableFirewall]),
+    (n("Fail2Ban"), &[Tool::Fail2Ban]),
+    (n("CrowdSec"), &[Tool::CrowdSec]),
+    (n("Database"), &[Tool::BackupDatabase, Tool::ImportDatabase, Tool::ImportPlus, Tool::RecoverSqlPassword]),
     (
-        "Updates",
+        n("Updates"),
         &[
             Tool::CheckUpdates,
             Tool::UpdateSystem,
@@ -154,8 +154,8 @@ enum SettingsAction {
 impl SettingsAction {
     fn title(self) -> &'static str {
         match self {
-            SettingsAction::Export => "Export encrypted settings",
-            SettingsAction::Import => "Import encrypted settings",
+            SettingsAction::Export => n("Export encrypted settings"),
+            SettingsAction::Import => n("Import encrypted settings"),
         }
     }
 }

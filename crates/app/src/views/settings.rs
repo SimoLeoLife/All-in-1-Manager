@@ -19,7 +19,7 @@ use crate::gui::dialogs::Dialogs;
 use crate::gui::theme::{self, Palette};
 use crate::gui::widgets::{self, ResultKind};
 use crate::gui::{Request, Shared, View};
-use crate::i18n::{self, t, tf, LANGUAGES};
+use crate::i18n::{self, n, t, tf, LANGUAGES};
 
 type Banner = Option<(ResultKind, String, String)>;
 
@@ -111,7 +111,7 @@ fn save(settings: &InstallerSettings) -> Result<(), String> {
     settings.save().map_err(|e| e.to_string())
 }
 
-const ATOM_CHOICES: [&str; 3] = ["Detect: look on the server", "Installed", "Not installed"];
+const ATOM_CHOICES: [&str; 3] = [n("Detect: look on the server"), n("Installed"), n("Not installed")];
 
 impl SettingsView {
     pub fn new(_shared: &Shared) -> Self {
@@ -904,6 +904,10 @@ fn show_banner(ui: &mut egui::Ui, palette: &Palette, result: &Banner) {
         widgets::result_banner(ui, palette, *kind, heading, message);
     }
 }
+
+// The captions of aio_core::settings::BRANCH_CHOICES (translated in branch_text), copied here so tools/i18n_keys.py
+// collects them. Keep in step with BRANCH_CHOICES.
+const _: [&str; 2] = [n("stable, the version the hotel runs on"), n("the newest changes, not always stable")];
 
 fn branch_text(branch: &str, caption: &str) -> String {
     format!("{branch}   ({})", t(caption))

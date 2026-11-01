@@ -18,7 +18,7 @@ use crate::gui::theme::Palette;
 use crate::gui::widgets::ResultKind;
 use crate::gui::wizard::Wizard;
 use crate::gui::Shared;
-use crate::i18n::{t, tf};
+use crate::i18n::{n, t, tf};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ExistingFolderChoice {
@@ -168,16 +168,16 @@ impl InstallStep for AtomCmsStep {
 
     fn checks(&self) -> Vec<String> {
         [
-            "Check the server",
-            "Clone or update AtomCMS",
-            ".env",
-            "composer install",
-            "Database: migrate and settings",
-            "Theme: npm run build:atom",
-            "Octane on /client: configure and build",
-            "NGINX and Traefik",
-            "Test the CMS, /client and /api",
-            "Installation key for the web installer",
+            n("Check the server"),
+            n("Clone or update AtomCMS"),
+            n(".env"),
+            n("composer install"),
+            n("Database: migrate and settings"),
+            n("Theme: npm run build:atom"),
+            n("Octane on /client: configure and build"),
+            n("NGINX and Traefik"),
+            n("Test the CMS, /client and /api"),
+            n("Installation key for the web installer"),
         ]
         .iter()
         .map(|c| t(c).to_string())

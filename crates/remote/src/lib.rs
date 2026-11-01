@@ -13,6 +13,7 @@ pub mod cms_site;
 pub mod crowdsec;
 pub mod custom_cms;
 pub mod dev_tools;
+pub mod doctor;
 pub mod emulator;
 pub mod emulator_assets;
 pub mod emulator_monitor;

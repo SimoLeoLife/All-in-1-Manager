@@ -41,6 +41,7 @@ pub enum Component {
 /// One tile of the page.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Tool {
+    HealthCheck,
     ServerStatus,
     EmulatorMonitor,
     Terminal,
@@ -72,6 +73,7 @@ impl Tool {
     /// Title (English key), description (English key) and icon, as in ToolsView.BuildWorkspace.
     fn info(self) -> (&'static str, &'static str, Icon) {
         match self {
+            Tool::HealthCheck => (n("Health check"), n("Services, disk, certificate, backups, updates, firewall: green, yellow or red, with a fix"), Icon::Check),
             Tool::ServerStatus => (n("Server status"), n("Live CPU, memory, network, disks, users, versions"), Icon::Info),
             Tool::EmulatorMonitor => (n("Emulator & wired"), n("CPU per wired thread and thread group, rooms with slow wired"), Icon::Cog),
             Tool::Terminal => (n("SSH terminal"), n("A shell (command line) on the server, in this window"), Icon::Console),
@@ -122,7 +124,7 @@ impl Tool {
 
 /// The sections of the page, in order.
 const SECTIONS: [(&str, &[Tool]); 8] = [
-    (n("Status"), &[Tool::ServerStatus, Tool::EmulatorMonitor, Tool::Terminal]),
+    (n("Status"), &[Tool::HealthCheck, Tool::ServerStatus, Tool::EmulatorMonitor, Tool::Terminal]),
     (n("Services"), &[Tool::RestartEmulator, Tool::RestartMariaDb, Tool::RestartNginx, Tool::RestartTraefik, Tool::RestartAll]),
     (n("Visitors"), &[Tool::FixVisitorIps]),
     (n("Firewall"), &[Tool::EnableFirewall, Tool::DisableFirewall]),
@@ -199,6 +201,7 @@ pub struct ToolsView {
     page: Page,
     state: SharedState,
     server_status: Option<ServerStatusView>,
+    doctor: Option<crate::views::doctor::DoctorView>,
     emulator_monitor: Option<EmulatorMonitorView>,
     terminal: Option<TerminalView>,
     /// What the search field above the tiles filters on.
@@ -213,7 +216,7 @@ fn matches(query: &str, texts: &[&str]) -> bool {
 
 impl ToolsView {
     pub fn new(_shared: &Shared) -> Self {
-        Self { page: Page::Tools, state: Arc::new(Mutex::new(State::default())), server_status: None, emulator_monitor: None, terminal: None, search: String::new() }
+        Self { page: Page::Tools, state: Arc::new(Mutex::new(State::default())), server_status: None, doctor: None, emulator_monitor: None, terminal: None, search: String::new() }
     }
 
     /// Starts the update check once per login (not while a tool runs). (ToolsView.Refresh)
@@ -276,6 +279,13 @@ impl ToolsView {
             return;
         }
         match tool {
+            Tool::HealthCheck => {
+                // Opening the page again checks again.
+                if let Some(doctor) = &self.doctor {
+                    doctor.check(shared);
+                }
+                return self.page = Page::Doctor;
+            }
             Tool::ServerStatus => return self.page = Page::ServerStatus,
             Tool::EmulatorMonitor => return self.page = Page::EmulatorMonitor,
             Tool::Terminal => return self.page = Page::Terminal,
@@ -299,8 +309,10 @@ impl ToolsView {
             });
         }
         let job = actions::Job { shared: shared.clone(), state: self.state.clone(), server, title: title.clone() };
+        let started = chrono::Local::now();
         shared.spawn(async move {
             let result = actions::perform(tool, &job).await;
+            let failed = result.is_err();
             let run = job.state.lock().unwrap().current_run.clone();
             if let Err(error) = result {
                 let message = step::error_message(&error);
@@ -316,6 +328,9 @@ impl ToolsView {
             }
             if let Some(run) = &run {
                 run.set_busy(false);
+                // The run panel's log goes to the history; a tool that stopped before it ran leaves nothing to keep.
+                let outcome = if failed { aio_core::history::Outcome::Failed } else { aio_core::history::Outcome::Done };
+                step::save_history(run, job.server.as_ref(), "tool", &title, outcome, started);
             }
             {
                 let mut state = job.state.lock().unwrap();
@@ -518,6 +533,32 @@ impl View for ToolsView {
                     ui.add_space(18.0);
                 });
             }
+            Page::Doctor => {
+                let mut fix = None;
+                egui::ScrollArea::vertical().id_salt("tools-doctor").auto_shrink([false, false]).show(ui, |ui| {
+                    let doctor = self.doctor.get_or_insert_with(|| crate::views::doctor::DoctorView::new(shared));
+                    doctor.show(ui, palette, shared);
+                    fix = doctor.take_fix();
+                    ui.add_space(12.0);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| self.back_button(ui));
+                    ui.add_space(18.0);
+                });
+                // A Fix button: the tool runs on the Tools page, with its question and log.
+                if let Some(fix) = fix {
+                    use crate::views::doctor::Fix;
+                    let tool = match fix {
+                        Fix::RestartEmulator => Tool::RestartEmulator,
+                        Fix::RestartMariaDb => Tool::RestartMariaDb,
+                        Fix::RestartNginx => Tool::RestartNginx,
+                        Fix::RestartTraefik => Tool::RestartTraefik,
+                        Fix::UpdateSystem => Tool::UpdateSystem,
+                        Fix::BackupDatabase => Tool::BackupDatabase,
+                        Fix::EnableFirewall => Tool::EnableFirewall,
+                    };
+                    self.page = Page::Tools;
+                    self.start_tool(tool, shared);
+                }
+            }
             Page::Terminal => {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| self.back_button(ui));
                 ui.add_space(8.0);
@@ -551,6 +592,9 @@ impl View for ToolsView {
             view.session_changed(shared);
         }
         if let Some(view) = self.emulator_monitor.as_mut() {
+            view.session_changed(shared);
+        }
+        if let Some(view) = self.doctor.as_mut() {
             view.session_changed(shared);
         }
         self.refresh(shared);

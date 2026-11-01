@@ -266,6 +266,8 @@ pub async fn detect(step: Arc<dyn InstallStep>, server: Arc<dyn Server>, ui: Ste
 pub async fn run(step: Arc<dyn InstallStep>, server: Arc<dyn Server>, ui: StepUi) -> StepOutcome {
     ui.start();
     dry_run_sink(server.as_ref(), &ui);
+    let started = chrono::Local::now();
+    let history_server = server.clone();
     let outcome = match step.run(server, ui.clone()).await {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -279,7 +281,53 @@ pub async fn run(step: Arc<dyn InstallStep>, server: Arc<dyn Server>, ui: StepUi
         }
     };
     ui.set_busy(false);
+    let kept = match outcome {
+        StepOutcome::Done => Some(aio_core::history::Outcome::Done),
+        StepOutcome::Failed => Some(aio_core::history::Outcome::Failed),
+        StepOutcome::Aborted => Some(aio_core::history::Outcome::Aborted),
+        StepOutcome::Skipped => None,
+    };
+    if let Some(kept) = kept {
+        save_history(&ui, history_server.as_ref(), "step", &step.title(), kept, started);
+    }
     outcome
+}
+
+/// The server's name in the history: the host, with the port when it is not 22.
+pub fn history_server(server: &dyn Server) -> String {
+    let login = server.login();
+    match (login.port, login.host.contains(':')) {
+        (22, _) => login.host.clone(),
+        (port, true) => format!("[{}]:{port}", login.host),
+        (port, false) => format!("{}:{port}", login.host),
+    }
+}
+
+/// Keeps the run's log in configuration/history (not for the dry run, which reaches no server). A warning result counts
+/// as a warning.
+pub fn save_history(ui: &StepUi, server: &dyn Server, kind: &str, title: &str, outcome: aio_core::history::Outcome, started: chrono::DateTime<chrono::Local>) {
+    if server.is_dry_run() {
+        return;
+    }
+    let state = ui.state();
+    let outcome = match (&state.result, outcome) {
+        (Some(banner), aio_core::history::Outcome::Done) if banner.kind == ResultKind::Warning => aio_core::history::Outcome::Warning,
+        _ => outcome,
+    };
+    let result = state.result.as_ref().map(|b| format!("{}: {}", b.heading, b.message)).unwrap_or_default();
+    let host = history_server(server);
+    let record = aio_core::history::Record {
+        server: &host,
+        kind,
+        title,
+        outcome,
+        started,
+        finished: chrono::Local::now(),
+        result: &result,
+        lines: state.lines.lines(),
+    };
+    // Not being able to write the history never fails the step.
+    let _ = aio_core::history::save(&record);
 }
 
 /// The step's page: its intro, or the run panel while and after it runs.

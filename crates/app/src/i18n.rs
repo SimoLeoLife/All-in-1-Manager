@@ -108,9 +108,11 @@ mod tests {
 
     #[test]
     fn fallback_and_placeholders() {
-        set("it");
-        assert_eq!(t("a text nobody translated"), "a text nobody translated");
-        set("en");
+        // The tables directly: set() would switch the language for the other tests running at the same time, which
+        // compare English texts.
+        let italian = LANGUAGES.iter().position(|l| l.code == "it").unwrap();
+        assert_eq!(tables()[italian].get(&format!("{} {}", "no table", "has this")), None);
+        assert_eq!(tables()[italian].get("Settings").copied(), Some("Impostazioni"));
         assert_eq!(tf("{count} operations", &[("count", "5")]), "5 operations");
     }
 }

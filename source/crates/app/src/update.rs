@@ -10,7 +10,7 @@ use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
-pub const REPOSITORY: &str = "SimoLeoLife/All-in-1-installer";
+pub const REPOSITORY: &str = "duckietm/All-in-1-installer";
 const TAG_PREFIX: &str = "rust-v";
 
 #[cfg(windows)]

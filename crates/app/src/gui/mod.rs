@@ -4,6 +4,7 @@
 
 pub mod banner;
 pub mod collapse;
+pub mod day_night;
 pub mod dialogs;
 pub mod dry_run;
 pub mod flags;
@@ -202,6 +203,7 @@ impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, runtime: tokio::runtime::Handle, dry_run: bool) -> Self {
         let ctx = cc.egui_ctx.clone();
         egui_extras::install_image_loaders(&ctx);
+        ctx.set_theme(day_night::preference(day_night::saved().as_deref()));
         theme::install_fonts(&ctx);
         let dialogs = Dialogs::new(ctx.clone());
         let shared = Shared {
@@ -576,6 +578,8 @@ impl App {
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
                 let session = self.shared.session();
+                day_night::switch(ui);
+                ui.add_space(4.0);
                 if session.is_some() && ui.add(widgets::secondary_button(t("Disconnect"))).on_hover_text(t("Close the connection to the server; log in again (to this or another server) with the button next to it")).clicked() {
                     self.disconnect();
                 }

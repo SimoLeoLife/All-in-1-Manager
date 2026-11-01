@@ -260,7 +260,7 @@ impl SettingsView {
     // ---- Look and language ----
 
     fn look_card(&mut self, ui: &mut egui::Ui, palette: &Palette, shared: &Shared) {
-        card_heading(ui, palette, t("Look"), t("How the installer looks. Light or dark follows your system in both. A change applies when the installer starts again."));
+        card_heading(ui, palette, t("Look"), t("How the installer looks. A change of look applies when the installer starts again; day or night changes at once."));
         ui.radio_value(&mut self.hotel_look, true, t("Hotel: the look of a Habbo hotel (blue, yellow, pixel titles, a hotel view on the dashboard)"));
         ui.radio_value(&mut self.hotel_look, false, t("Professional: the calm look of the All-in-1 Converter (indigo, soft cards)"));
         ui.horizontal(|ui| {
@@ -272,6 +272,20 @@ impl SettingsView {
             }
         });
         show_banner(ui, palette, &self.look_result);
+
+        // Day or night: applies at once, like the switch at the top right.
+        ui.add_space(8.0);
+        ui.label(RichText::new(t("Day or night")).size(13.0).strong());
+        let saved = crate::gui::day_night::saved();
+        let mut choice = saved.clone();
+        ui.horizontal(|ui| {
+            ui.radio_value(&mut choice, None, t("Follow the system"));
+            ui.radio_value(&mut choice, Some(crate::gui::day_night::LIGHT.to_string()), t("Day (light)"));
+            ui.radio_value(&mut choice, Some(crate::gui::day_night::DARK.to_string()), t("Night (dark)"));
+        });
+        if choice != saved {
+            crate::gui::day_night::choose(ui.ctx(), choice.as_deref());
+        }
     }
 
     fn save_look(&mut self) {

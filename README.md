@@ -1,6 +1,6 @@
 # All-in-1 Installer
 
-A C# desktop installer that sets up a **full hotel server** on an **Ubuntu Server or Debian**
+A desktop installer, written in Rust, that sets up a **full hotel server** on an **Ubuntu Server or Debian**
 machine over SSH:
 
 | Component | Repository |
@@ -14,12 +14,21 @@ The GUI looks like a Habbo hotel: hotel-blue sidebar, the yellow of the hotel lo
 dark edge and a hard shadow like the hotel's windows, a hotel view on the dashboard (blue sky with outlined clouds by day, stars at night, and a hotel
 scene), Ubuntu for text (as habbo.com and the client use) and Pixelify Sans for titles in the spirit of
 the hotel's pixel font. Both fonts are free (Ubuntu Font Licence, SIL Open Font License) and ship in
-`SourceCode/App/Fonts` with their licences. The sky and clouds are drawn by the installer itself; the hotel scene on
-the right is `SourceCode/App/Images/hotel-view.png`, built into the program (replace that file to show another one). The layout (sidebar, cards, status pill, console log) comes from the
-[All-in-1 Converter](https://github.com/duckietm/all-in-1-converter).
+`crates/app/assets/fonts` with their licences. The whole hotel view is drawn by the installer itself (sky, clouds,
+stars and an isometric hotel), so no picture of the game is shipped. The layout (sidebar, cards, status pill, console
+log) comes from the [All-in-1 Converter](https://github.com/duckietm/all-in-1-converter).
+
+The window speaks **English, Italiano, Français, Deutsch, Nederlands, Español, Português, Türkçe and Suomi**
+(**Settings → Language**; the first start follows the system language). The logs of the steps stay in English: they
+are what the server prints, and what you paste into a question.
+
+> This is the Rust version of the installer (2.x). It does the same as the C# installer 1.0.x, command for command
+> (see [Parity with the C# installer](#parity-with-the-c-installer)), as one program without .NET: one `.exe` for
+> Windows and one file for Linux. `configuration/` (settings, SSH keys, database passwords) and the encrypted settings
+> backups are the same files, so an existing configuration keeps working.
 
 **Settings → Look** switches between this **Hotel** look and the **Professional** look of the All-in-1 Converter
-(indigo, soft cards, Inter). It is stored in `configuration/settings.json` and applies at the next start; **Restart
+(indigo, soft cards). It is stored in `configuration/settings.json` and applies at the next start; **Restart
 now** starts the installer again right away (it waits while a step runs). Light or dark follows the system in both.
 
 ![Dashboard](docs/screenshots/dashboard.png)
@@ -37,26 +46,10 @@ so both rows run Update Octane. AtomCMS gets a row of its own once it is install
 
 ## Requirements
 
-**On your computer** (Windows 10/11 x64 or Linux x64), the installer needs **.NET 11**:
-
-| How you run it | What to install |
-|---|---|
-| Published single file (`publish-win.bat` / `publish-linux.sh`) | Nothing: .NET is included in the file |
-| A normal build (`bin/Debug/net11.0` or `bin/Release/net11.0`) | **.NET 11 Runtime** (the plain .NET Runtime; the Desktop and ASP.NET Core runtimes are not needed) |
-| Building from source | **.NET 11 SDK** (includes the runtime) |
-
-Download: **<https://dotnet.microsoft.com/download/dotnet/11.0>**. .NET 11 is at release candidate 2
-(`11.0.100-rc.2`, supported for production use); the final release follows in November 2026. Any 11.0 SDK from
-`11.0.100-rc.1` up works (`global.json` rolls forward). Check what is installed with `dotnet --list-sdks` and
-`dotnet --list-runtimes`.
-
-On Linux without a package, Microsoft's install script works too:
-
-```bash
-curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
-bash dotnet-install.sh --channel 11.0 --quality preview      # the SDK, into ~/.dotnet
-export PATH="$HOME/.dotnet:$PATH"
-```
+**On your computer** (Windows 10/11 x64 or Linux x64): nothing. The installer is one file, with everything it
+needs inside (fonts, the client images for Deploy Assets). Download `all-in-1-installer-windows-x64.exe` or
+`all-in-1-installer-linux-x64` from the [releases](https://github.com/SimoLeoLife/All-in-1-installer/releases), or
+[build it](#building). On Linux it needs a desktop (X11 or Wayland) and OpenGL.
 
 **The server**: a fresh Ubuntu Server (22.04 or newer) or Debian (12 or newer) machine you can reach over SSH as
 root or as a user with sudo rights. Everything else (NGINX, PHP, MariaDB, Java, Node.js, Docker ...) is installed
@@ -107,7 +100,7 @@ filled in with the same server, user and key (never the passwords), as soon as n
 Pages leave with **Back**, which returns to the dashboard and keeps the login open; a wizard continues where it was
 the next time you open it. Logging in again (after a lost connection) starts the wizards over.
 
-Every step uses `ServerConnection.RunAsRootAsync(...)`, which always runs as root: directly when logged in as root,
+Every step uses `Server::run_as_root` (`crates/remote/src/server.rs`), which always runs as root: directly when logged in as root,
 or through sudo. Files copied over SFTP into folders only root can open (the database backups) go through a private
 staging folder in `/tmp` when the login is not root.
 
@@ -117,7 +110,7 @@ staging folder in `/tmp` when the login is not root.
 login can be root with that key. Choose one:
 
 - **Generate a new key pair**: Ed25519 (recommended) or RSA 4096, in the standard OpenSSH format
-  (works with `ssh`, SSH.NET, and PuTTYgen via *Conversions → Import key*). You must set a
+  (works with `ssh`, the installer itself, and PuTTYgen via *Conversions → Import key*). You must set a
   **key password** (at least 8 characters, typed twice). The private key is encrypted with it exactly
   like `ssh-keygen -N` does (aes256-ctr, bcrypt KDF with 16 rounds). The password is never stored and
   is cleared from the form after each run. The keys are saved in the **configuration directory** on
@@ -213,7 +206,7 @@ or **Abort installation**. If nginx.org's NGINX is already there, the step upgra
 
 ![NGINX installed](docs/screenshots/nginx-installed.png)
 
-Long commands stream their output live into the log (`ServerConnection.RunAsRootStreamingAsync`).
+Long commands stream their output live into the log (`Server::run_as_root_streaming`).
 **Copy log** in the top right corner of the log puts it on the clipboard, so a failure can be pasted into a
 message instead of screenshotted. Select lines first to copy only those; Ctrl+C does the same. The button is
 on every log in the program: the install steps, the connect page and the Tools.
@@ -456,7 +449,7 @@ https://example.com/api/...  Traefik          -> Polaris    http://127.0.0.1:209
    (and `/debian`): conflicting packages (`docker.io`, `podman-docker`, `containerd`, `runc` ...) are removed after
    you agree, the key `9DC858229FC7DD38854AE2D88D81803C0EBFCD88` is checked, `docker.sources` is added, and
    `docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin` are installed.
-2. **NGINX** gets the site `/etc/nginx/sites-available/hotel` (`HotelSite.cs`; the Octane step writes the same
+2. **NGINX** gets the site `/etc/nginx/sites-available/hotel` (`crates/remote/src/hotel_site.rs`; the Octane step writes the same
    file with its own root), modelled on a production Octane site:
    - `listen 127.0.0.1:85` only (so it is reachable through Traefik only), `server_name` with and without `www.`,
      `real_ip` from Traefik, `server_tokens off`, `autoindex off`, security headers (`X-Content-Type-Options`,
@@ -683,8 +676,8 @@ Skipping a step moves on to the next one, and a failed step can be skipped too.
 
 ![NGINX already installed](docs/screenshots/rerun-nginx-installed.png)
 
-A new step is a class derived from `InstallStep`, added to `ServerWizard.ServerSteps()`. An addon is a
-`ServerWizard` with its own step list and finish page (and `keyStep: false`), plus a sidebar entry in `InstallerWindow`.
+A new step implements `InstallStep` (`crates/app/src/gui/step.rs`) and is added to `views::server_steps()`. An addon is a
+`Wizard` with its own step list and finish page (and `key_step: false`, see `views/gitea.rs`), plus a sidebar entry in `gui/mod.rs`.
 
 ## Addons
 
@@ -1293,7 +1286,7 @@ backup at the bottom. Without a login the server tools are greyed out, with a **
   crackables have no prizes yet (`items_crackable`): until you add them, clicking does nothing. The log lists the
   numbers: furniture added and already there, per interaction rule, and what was left out.
 
-The conversion is `SourceCode/Remote/Sql/plus-to-polaris-furniture.sql` and `plus-to-polaris-catalog.sql`, built into
+The conversion is `crates/remote/sql/plus-to-polaris-furniture.sql` and `plus-to-polaris-catalog.sql`, built into
 the program.
 
 **Settings backup** (no server needed): **Export encrypted settings** writes the whole configuration directory
@@ -1318,186 +1311,112 @@ password or a damaged file changes nothing.
 
 ## Updating the installer itself
 
-The published program checks at startup whether a newer release of
-<https://github.com/duckietm/All-in-1-installer> is out. When there is one, it says what is new and offers
-**Update and restart**: the release file is downloaded next to the running program, the running one is renamed
-to `<name>.old`, the new one takes its place under the same name, and the program starts again. **Later** keeps
-the version you have; the question comes back at the next start. The `.old` file is removed at that next start.
+The program checks at startup whether a newer release of <https://github.com/SimoLeoLife/All-in-1-installer> is out
+(releases tagged `rust-v<version>`). When there is one, it says what is new and offers **Update and restart**: the
+release file is downloaded next to the running program, the running one is renamed to `<name>.old`, the new one takes
+its place under the same name, and the program starts again. **Later** keeps the version you have; the question comes
+back at the next start. The `.old` file is removed at that next start. A download that stops early never replaces a
+working program.
 
-The check is quiet when there is nothing to do: no internet, a release that is not newer, a draft or
-pre-release, or a repository without releases all mean no question is asked. It also leaves development builds
-alone: only the self-contained single-file program (`publish-win.bat` / `publish-linux.sh`) can replace itself
-with one file, so `dotnet run` never offers an update.
+The check is quiet when there is nothing to do: no internet, a release that is not newer, a draft or pre-release, or
+a repository without releases all mean no question is asked. A debug build (`cargo run`) never offers an update.
+**About → Check for updates** checks again at any time.
 
-The version it compares is `<Version>` in `SourceCode/All-in-1 Installer.csproj` against the release's tag
-(`v1.2.0` and `1.2.0` both work). The file it downloads is the release asset for your system: the `.exe` on
-Windows, the Linux one otherwise, preferring the one whose name matches your architecture.
-
-**Without a release** (the repository has none yet, or you run the `Program` folder with its `.dll` files, which
-cannot replace itself), the installer compares its version with `<Version>` in
-`SourceCode/All-in-1 Installer.csproj` on the `main` branch. When that is newer, it shows **Version X of the
-installer is available** at startup with **Open the download page** (<https://github.com/duckietm/All-in-1-installer>):
-download the new `Program` folder, close the installer and start the new one; settings and saved logins stay.
-**About → Check for updates** checks again at any time and says when you have the latest version.
-
-**Publishing a new version** is automatic: every push to `main` runs `.github/workflows/release.yml`, which
-1. takes the next version: the last `v*` tag plus one (`1.0.4` → `1.0.5`), or `<Version>` in
-   `SourceCode/All-in-1 Installer.csproj` when you raised it by hand above the last release (`1.1.0`);
-2. rebuilds the `Program` folder with that version (its `Assets` folder stays as it is) and builds both single-file
-   programs;
-3. commits the new `<Version>` and `Program` to `main` as `Version X.Y.Z` (pull before your next push), tags it
-   `vX.Y.Z` and publishes a GitHub release with the single-file programs, which those programs update themselves
-   from.
-
-The workflow pushes to `main` as the `github-actions` bot: when `main` is protected, allow that bot to push.
+The version it compares is `version` in `[workspace.package]` of `Cargo.toml` against the release's tag. The file it
+downloads is `all-in-1-installer-windows-x64.exe` on Windows and `all-in-1-installer-linux-x64` on Linux.
 
 ## Building
 
-Requires the .NET 11 SDK (see [Requirements](#requirements)).
+Requires Rust (stable, 1.85 or newer) from <https://rustup.rs>. On Linux also the libraries of the window:
 
 ```bash
-cd SourceCode
-dotnet run -c Release
+sudo apt-get install -y pkg-config libxkbcommon-dev libgl1-mesa-dev libgtk-3-dev
 ```
-
-Single-file builds, self-contained (.NET included, nothing to install on the computer that runs them):
 
 ```bash
-./publish-linux.sh      # publish/linux-x64/All-in-1 Installer
-publish-win.bat         # publish\win-x64\All-in-1 Installer.exe
+cargo run --release -p aio-app                 # start it
+cargo build --release -p aio-app               # target/release/all-in-1-installer(.exe)
+cargo test --workspace                         # all tests, including the parity tests
 ```
 
-The installer runs on your own Windows or Linux desktop and connects to the server, so the
-server itself needs no GUI.
+On Windows both the MSVC and the GNU toolchain work (the GNU one with MinGW, for the icon and version information of
+the `.exe`). The installer runs on your own Windows or Linux desktop and connects to the server, so the server itself
+needs no GUI.
+
+### Dry run
+
+```bash
+all-in-1-installer --dry-run
+```
+
+logs in to nothing: every command a step would send to the server (the scripts, what goes over stdin, uploads and
+downloads) is shown in that step's log, prefixed with `[dry run]`, instead of being run. Every command "succeeds" with
+no output, so the steps take the path of a fresh server. Use it to read exactly what the installer would do.
+
+### Screenshots
+
+`AIO_SCREENSHOT=<file.png>` saves one screenshot of the window and closes it; `AIO_SCREENSHOT_PAGE` picks the page
+(`dashboard`, `install`, `cms`, `gitea`, `fail2ban`, `crowdsec`, `deploy`, `explorer`, `sql`, `debug`, `tools`, `status`,
+`monitor`, `terminal`, `settings`, `about`, `login`), `AIO_SCREENSHOT_CONNECT=1` logs in to the dry run first,
+`AIO_SCREENSHOT_THEME=dark|light`, `AIO_SCREENSHOT_LOOK=hotel|professional` and `AIO_SCREENSHOT_LANG=<code>` set the
+rest. The pictures in `docs/screenshots` are made this way.
+
+### Parity with the C# installer
+
+Every script, SQL statement and file the installer sends to the server comes from the C# installer's code, and the
+tests prove it is the same text, byte for byte: `crates/remote/tests/golden/*.txt` (about 350 files) were written by
+the C# code itself (the last C# version, 1.0.2), through a harness that compiled its `Remote/*.cs` against a recording
+connection, for every install step and tool and their variants (https/http, Cloudflare, a CMS, a re-run ...). The
+Rust steps run the same scenarios against the recording server of `aio-remote` and must produce the same files.
+The same was done for the terminal emulator (27 screen dumps). The harness lives in the git history (it needs the
+C# sources).
 
 ### On GitHub
 
-`.github/workflows/build.yml` builds both single-file programs on every push to `main` and on every pull
-request, on `windows-latest` and `ubuntu-latest`, so a build that does not compile is caught before it is
-merged. Each one is kept as a workflow artifact:
+`.github/workflows/ci.yml` tests and builds both programs on every push to `main` and on every pull request, on
+`windows-latest` and `ubuntu-latest`, and keeps them as workflow artifacts.
 
-| File | Platform |
-|------|----------|
-| `All-in-1 Installer win-x64.exe` | Windows |
-| `All-in-1 Installer linux-x64` | Linux |
-
-Pushing a tag that starts with `v` does the same and then publishes a release with both files attached:
+Pushing a tag `rust-v<version>` (the version in `Cargo.toml`) runs `.github/workflows/release.yml`, which tests and
+builds both programs again and publishes a release with `all-in-1-installer-windows-x64.exe` and
+`all-in-1-installer-linux-x64`, the files the update check looks for:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag rust-v2.0.0
+git push origin rust-v2.0.0
 ```
-
-The tag is also the version the program reports: `-p:Version=` is set from it, so the release and the program
-inside agree. That matters, because the startup update check compares the newest release tag with the version
-of the running program — without it a released build would keep offering itself as an update. The file names
-are what that check looks for: the `.exe` on Windows, the one with `linux` in the name otherwise.
-
-**Run it by hand** from the Actions tab (`workflow_dispatch`) to get the two files without tagging anything.
 
 ## Project layout
 
 ```
-Assets/                                   Client images shipped next to the executable (Deploy Assets → Images)
-SourceCode/
-  Program.cs                              Avalonia entry point
-  App/Gui/AvaloniaApp.cs                  Fluent theme + Professional theme
-  App/Professional/ProfessionalTheme.cs   The hotel look: colours, fonts, buttons, cards, chips and icons
-  App/Fonts/                              Ubuntu and Pixelify Sans, with their licences
-  App/Professional/Views/InstallerWindow.cs   Sidebar, header, dashboard
-  App/Professional/Views/LoginDialog.cs   The login at startup: server, user, password or SSH key (import a key), connect
-  App/Professional/Views/SshKeyImport.cs  Reads a key file and stores a private key in configuration/keys (login and Settings)
-  App/Professional/Views/ServerWizard.cs  SSH key step, then the install steps (server install and addons), on the shared login
-  App/Professional/Views/SshKeyStep.cs    SSH key page (generate / own key, install, test)
-  App/Professional/Views/ExistingKeysDialog.cs  "Some keys are already present" dialog
-  App/Professional/Views/InstallStep.cs   Base class of the install steps (intro, detection, run panel)
-  App/Professional/Views/NginxStep.cs     NGINX page
-  App/Professional/Views/PhpStep.cs       PHP page
-  App/Professional/Views/MariaDbStep.cs   MariaDB page
-  App/Professional/Views/DevToolsStep.cs  Node.js / Composer / Yarn page
-  App/Professional/Views/CloneStep.cs     Clone one repository (used for Polaris, Octane, Renderer)
-  App/Professional/Views/EmulatorStep.cs  Emulator page (timezone, memory, whitelist)
-  App/Professional/Views/WebAccessStep.cs Web access page (Cloudflare, http/https, address)
-  App/Professional/Views/OctaneStep.cs    Octane page
-  App/Professional/Views/HardenStep.cs    Harden page
-  App/Professional/Views/AtomCmsStep.cs   CMS addon: AtomCMS
-  App/Professional/Views/CustomCmsStep.cs CMS addon: your own CMS (GitHub link or ZIP, PHP or static, root folder)
-  App/Professional/Views/EpicNextStep.cs  CMS addon: EpicNext CMS (Next.js, built and run on the server)
-  App/Professional/Views/RemoveCmsStep.cs CMS addon: remove the CMS, Octane on / again
-  App/Professional/Views/GiteaStep.cs     Gitea addon: domain, Cloudflare, admin, DNS warning
-  App/Professional/Views/RemoveGiteaStep.cs Gitea addon: remove Gitea, its data only when asked
-  App/Professional/Views/Fail2BanStep.cs  Fail2Ban addon: ban settings and the whitelist (your IP filled in)
-  App/Professional/Views/RemoveFail2BanStep.cs Fail2Ban addon: stop and uninstall
-  App/Professional/Views/WhitelistBansDialog.cs Tools → Fail2Ban / CrowdSec: edit the whitelist, unban addresses
-  App/Professional/Views/CrowdSecStep.cs  CrowdSec addon: account, enrollment key, name, whitelist, Cloudflare check
-  App/Professional/Views/RemoveCrowdSecStep.cs CrowdSec addon: bouncer out of Traefik, engine stopped
-  App/Professional/Views/AssetSyncStep.cs Deploy Assets page (sync from the All-in-1 downloader)
-  App/Professional/Views/UiTextsStep.cs   Deploy Assets page: the client's UI texts (UITexts.jsonc) in a language
-  App/Professional/Views/EmulatorAssetsStep.cs  Deploy Assets page: Polaris' images and group badge parts into gamedata
-  App/Professional/Views/AssetExplorerView.cs   Asset Explorer: two panes (this computer, gamedata), keys, preview, transfers
-  App/Professional/Views/NameDialog.cs    Asks for a file or folder name (rename, new folder)
-  App/Professional/Views/SqlEditorView.cs SQL Editor: database tree, table data (edit, filter, pages), structure, query editor
-  App/Professional/Views/DatabaseLoginDialog.cs  MariaDB user, password and port for the SQL Editor
-  App/Professional/Views/DebugView.cs     Debug page: live logs of the emulator, NGINX, Traefik, the firewall, Fail2Ban and CrowdSec
-  App/Professional/Views/ToolsView.cs     Tools page: server tools and the settings backup
-  App/Professional/Views/TerminalView.cs  SSH terminal page (toolbar, terminal, ssh command)
-  App/Professional/Views/SettingsView.cs  Settings page: servers and default key, importing SSH keys, downloader path
-  App/Professional/Views/SshLoginStep.cs  SSH login page (keys only, optional)
-  App/Professional/Views/ServerStatusView.cs  Live server dashboard (Server status)
-  App/Professional/Views/LineChart.cs     Rolling line graph used by the dashboards
-  App/Professional/Views/EmulatorMonitorView.cs  Live emulator and wired dashboard (Emulator & wired)
-  App/Professional/Views/PasswordDialog.cs  Password question (settings backup)
-  App/Professional/Views/FinishedView.cs  Completed pages: summary, WinSCP and where the assets go; AtomCMS' web installer
-  App/Professional/Views/RunPanel.cs      Progress, check list, result and live log of an install step
-  App/Professional/Views/ChoiceDialog.cs  Question with described answers
-  App/Professional/Views/UpdateDialog.cs  "A new version is available" at startup, with the download
-  App/Professional/Views/ProgressControls.cs    Check list and result banner
-  App/Professional/Views/LogView.cs       Console output panel, with Copy log
-  Update/AppUpdate.cs                     Checks GitHub releases at startup and replaces the program with a newer one
-  Configuration/ClientConfiguration.cs    The configuration/ directory on the client
-  Configuration/DatabaseCredentials.cs    Generated MariaDB passwords and their file format
-  Configuration/SettingsBackup.cs         Encrypted export / import of the configuration directory
-  Configuration/InstallerSettings.cs      Servers and default key, downloader path, branches, look, layout (configuration/settings.json)
-  Configuration/ServerLayout.cs           Paths on the server, the emulator's account and the database name, with their checks
-  Remote/ServerConnection.cs              SSH login, OS check, sudo -> root, RunAsRootAsync
-  Remote/SshKeys.cs                       Key generation (encrypted OpenSSH format) and public key parsing
-  Remote/BcryptPbkdf.cs                   bcrypt_pbkdf: turns the key password into the encryption key
-  Remote/RootAuthorizedKeys.cs            Read / back up / write /root/.ssh/authorized_keys, test key login
-  Remote/NginxInstaller.cs                NGINX mainline from nginx.org + Debian layout
-  Remote/PhpInstaller.cs                  PHP 8.5 (≥ 8.5.12) from packages.sury.org, PHP-FPM + NGINX
-  Remote/MariaDbInstaller.cs              MariaDB 12.3, secure-installation, bind-address, users, login tests
-  Remote/DevToolsInstaller.cs             Node.js 26 (NodeSource), Composer (checksum), Yarn (Corepack)
-  Remote/GitCloneInstaller.cs             Inspect / clone / update / move aside a git clone on the server
-  Remote/EmulatorInstaller.cs             JDK 25, emulator account, build.sh, DB account, config.ini, service, start
-  Remote/WebAccessInstaller.cs            Docker Engine, NGINX on 127.0.0.1:85, Traefik (/opt/traefik), Polaris whitelist, tests
-  Remote/OctaneInstaller.cs               yarn install, Octane configuration + gamedata folders, yarn build, serve dist/
-  Remote/HardenInstaller.cs               ufw firewall, Polaris ws.whitelist / ws.ip.header, sysctl SYN flood settings
-  Remote/SshLoginInstaller.cs             sshd: password login off (drop-in in sshd_config.d) or on again
-  Remote/HotelSite.cs                     The hotel's NGINX site (Octane on /, or AtomCMS with Octane on /client/)
-  Remote/AtomCmsInstaller.cs              AtomCMS: .env, composer, migrations and settings, theme build, tests
-  Remote/CustomCmsInstaller.cs            Your own CMS: Git access, ZIP, root folder, tests
-  Remote/EpicNextInstaller.cs             EpicNext CMS: Node.js/pnpm, .env, capped build, systemd service, tests
-  Remote/CmsSite.cs                       A CMS' own NGINX site on the first free port from 85 to 95
-  Remote/LocalPorts.cs                    The first free local port from 85 to 95 (CMS sites, Gitea)
-  Remote/GiteaInstaller.cs                Gitea in Docker behind Traefik: DNS check, compose, route, admin, test
-  Remote/Fail2BanInstaller.cs             Fail2ban for SSH: install, settings and whitelist, unban, remove
-  Remote/CrowdSecInstaller.cs             CrowdSec in Docker, console enrollment, Traefik bouncer (with rollback), test
-  Remote/AssetSync.cs                     Deploy Assets: compare with /var/www/gamedata, upload as a tar stream
-  Remote/UiTextsInstaller.cs              Installs UITexts_<language>.jsonc.example as gamedata/config/UITexts.jsonc
-  Remote/EmulatorAssetsInstaller.cs       Polaris' / the installer's Assets (images, hotel view, badge parts) into gamedata, missing files only
-  Remote/GamedataFiles.cs                 Asset Explorer server side: list, upload (rights), download, rename, delete, locked to gamedata
-  Remote/SqlSession.cs                    SQL Editor: SSH tunnel to MariaDB (MySqlConnector), tables, data, edits, scripts
-  Remote/SqlScript.cs                     Splits a script into statements like the mariadb client (quotes, comments, DELIMITER)
-  Remote/ServerUsers.cs                   The server's accounts for Settings → Server layout, and creating a service account
-  Remote/ServerTools.cs                   Restarts, database backup / import, system and emulator updates
-  Remote/PlusImport.cs                    Import Plus database: staging database, conversion, safety backup and restore
-  Remote/Sql/plus-to-polaris-*.sql        The Plus → Polaris conversion (furniture, catalog), built into the program
-  Remote/ServerStatus.cs                  Samples CPU, memory, network, disks, users and the git versions
-  Remote/EmulatorMonitor.cs               Emulator threads (CPU per thread, jcmd names) and slow-wired log warnings
-  Terminal/TerminalEmulator.cs            xterm-compatible terminal: escape sequences, colours, screens, scrollback
-  Terminal/TerminalControl.cs             Draws the terminal; keyboard, mouse selection, copy / paste
-  Terminal/TerminalSession.cs             SSH shell (xterm-256color) feeding the terminal
-  Remote/RemoteScript.cs                  Runs an install script as root with live output
+Cargo.toml                       The workspace (version of the program in [workspace.package])
+Program/Assets/                  Client images packed into the program (Deploy Assets → Images)
+crates/core/                     What lives on this computer
+  src/settings.rs                configuration/settings.json: servers, default key, downloader, branches, look, layout, language
+  src/layout.rs                  Paths on the server, the emulator's account and the database name, with their checks
+  src/config_dir.rs              The configuration/ folder: keys per server, mariadb.txt, owner-only files
+  src/credentials.rs             Generated MariaDB passwords and their file format
+  src/keys.rs                    SSH keys: generation (encrypted OpenSSH + PuTTY .ppk v2), public key formats, .ppk reader
+  src/backup.rs                  Encrypted export / import of the configuration folder (AES-256-GCM, PBKDF2)
+crates/remote/                   Everything that happens on the server
+  src/server.rs                  The Server trait: commands as root, streaming, follow, stdin, SFTP, tunnel, shell
+  src/ssh.rs                     The SSH login (russh): password, keyboard-interactive or key, the OS check, sudo -> root
+  src/recorder.rs                A Server that records instead of running (dry run, parity tests)
+  src/script.rs, prelude.sh      The script runner and the prelude every install script starts with
+  src/nginx.rs, php.rs, mariadb.rs, dev_tools.rs, git_clone.rs, emulator.rs, web_access.rs, hotel_site.rs,
+  src/octane.rs, harden.rs, ssh_login.rs, root_authorized_keys.rs      The install steps
+  src/atom_cms.rs, custom_cms.rs, epicnext.rs, cms_site.rs, local_ports.rs, gitea.rs, fail2ban.rs, crowdsec.rs
+                                 The addons
+  src/asset_sync.rs, ui_texts.rs, emulator_assets.rs, gamedata_files.rs     Deploy Assets and the Asset Explorer
+  src/sql_session.rs, sql_script.rs    SQL Editor: MariaDB over the SSH tunnel, statements like the mariadb client
+  src/server_tools.rs, plus_import.rs, server_status.rs, emulator_monitor.rs, server_users.rs   The Tools page
+  sql/plus-to-polaris-*.sql      The Plus → Polaris conversion
+  tests/golden/                  What the C# installer sends, per scenario; tests/golden_*.rs compare with it
+crates/terminal/                 The xterm-compatible terminal emulator of the SSH terminal
+crates/app/                      The window (egui)
+  src/gui/                       Theme (Hotel / Professional), icons, widgets, dialogs, log view, step framework, wizard
+  src/views/                     One file per page or step (dashboard, login, the steps, addons, tools, settings ...)
+  src/update.rs                  The update at startup
+  assets/i18n/*.json             The translations (English is the key); tools/i18n_keys.py lists what is missing
 ```
 
 ## Credits

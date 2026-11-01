@@ -220,7 +220,7 @@ fn putty_private_key(algorithm: &str, public_blob: &[u8], private_blob: &[u8], c
 
     // Padded to the AES block size. Readers ignore what follows the key, and the MAC covers it.
     let mut plain = private_blob.to_vec();
-    if encrypted && plain.len() % 16 != 0 {
+    if encrypted && !plain.len().is_multiple_of(16) {
         let mut padding = vec![0u8; 16 - plain.len() % 16];
         rand::rngs::OsRng.fill_bytes(&mut padding);
         plain.extend_from_slice(&padding);

@@ -37,8 +37,6 @@ pub enum Extra {
     Copy { label: String, value: String },
     /// Lines of text.
     Lines(Vec<String>),
-    /// A link the user can open.
-    Link { label: String, url: String },
 }
 
 /// The intro of a step: icon, heading, description, what it does, and a footnote.
@@ -125,11 +123,6 @@ impl StepUi {
     pub fn set_busy(&self, busy: bool) {
         self.state().busy = busy;
         self.changed();
-    }
-
-    /// Index of the check that is running now.
-    pub fn stage(&self) -> usize {
-        self.state().stage
     }
 
     pub fn detected(&self, kind: ResultKind, heading: &str, message: &str) {
@@ -352,11 +345,6 @@ pub fn show_run(ui: &mut egui::Ui, palette: &Palette, step_ui: &StepUi, log_heig
             Extra::Lines(lines) => {
                 for line in lines {
                     widgets::text(ui, &line, 12.5);
-                }
-            }
-            Extra::Link { label, url } => {
-                if ui.link(label).clicked() {
-                    crate::gui::open_url(&url);
                 }
             }
         }

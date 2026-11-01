@@ -95,7 +95,8 @@ pub fn folders() -> Vec<EmulatorAssetFolder> {
     folders_in(&local_assets())
 }
 
-fn folders_in(local: &Path) -> Vec<EmulatorAssetFolder> {
+/// Like [`folders`], for the Assets folder at `local`.
+pub fn folders_in(local: &Path) -> Vec<EmulatorAssetFolder> {
     let mut folders = fixed();
     if !local.is_dir() {
         return folders;
@@ -183,7 +184,8 @@ pub async fn inspect(server: &dyn Server) -> Result<Vec<EmulatorAssetState>> {
     inspect_in(server, &local_assets()).await
 }
 
-async fn inspect_in(server: &dyn Server, local: &Path) -> Result<Vec<EmulatorAssetState>> {
+/// Like [`inspect`], for the Assets folder at `local` (the images packed into the program, extracted).
+pub async fn inspect_in(server: &dyn Server, local: &Path) -> Result<Vec<EmulatorAssetState>> {
     let folders = folders_in(local);
     let mut script = folders
         .iter()
@@ -258,7 +260,12 @@ echo OK"#;
 
 /// Adds the missing files without replacing any and returns how many were added.
 pub async fn install(server: &dyn Server, log: Log<'_>) -> Result<i64> {
-    let local = local_assets();
+    install_in(server, &local_assets(), log).await
+}
+
+/// Like [`install`], for the Assets folder at `local`.
+pub async fn install_in(server: &dyn Server, local: &Path, log: Log<'_>) -> Result<i64> {
+    let local = local.to_path_buf();
     let states = inspect_in(server, &local).await?;
     let mut added = 0i64;
 

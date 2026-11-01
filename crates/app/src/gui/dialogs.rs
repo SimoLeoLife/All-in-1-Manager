@@ -94,16 +94,6 @@ impl Dialogs {
         }
     }
 
-    /// Yes or no: true when `yes` was chosen.
-    pub async fn confirm(&self, window_title: &str, heading: &str, message: &str, yes: &str, no: &str) -> bool {
-        self.choose(window_title, heading, message, false, vec![Choice::new(yes, "", true).primary(), Choice::new(no, "", false)]).await
-    }
-
-    /// A message with only OK.
-    pub async fn message(&self, window_title: &str, heading: &str, message: &str) {
-        self.choose(window_title, heading, message, (), vec![Choice::new(t("OK"), "", ()).primary()]).await
-    }
-
     /// A text field; `check` returns what is wrong with the text (shown under it), or None. None when cancelled.
     pub async fn input(
         &self,

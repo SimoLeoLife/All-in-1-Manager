@@ -5,7 +5,6 @@
 use eframe::egui::{self, Color32, RichText};
 
 use super::theme::{hex, Fixed};
-use super::widgets;
 use crate::i18n::{t, tf};
 
 /// The lines of a log, joined once per change for the view.
@@ -42,10 +41,6 @@ impl LogLines {
 
     pub fn lines(&self) -> &[String] {
         &self.lines
-    }
-
-    pub fn len(&self) -> usize {
-        self.lines.len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -156,9 +151,3 @@ fn copy(ctx: &egui::Context, log: &mut LogLines, selection: Option<(usize, usize
     chosen.len()
 }
 
-/// A secondary "Copy log" outside the console (pages with their own toolbar).
-pub fn copy_button(ui: &mut egui::Ui, log: &mut LogLines) {
-    if ui.add(widgets::secondary_button(t("Copy log"))).clicked() {
-        copy(ui.ctx(), log, None);
-    }
-}

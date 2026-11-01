@@ -30,26 +30,6 @@ pub fn title_text(text: &str, size: f32) -> RichText {
     if theme::hotel() { text } else { text.strong() }
 }
 
-pub fn chip(ui: &mut egui::Ui, text: &str, back: Color32, fore: Color32) {
-    egui::Frame::new().fill(back).corner_radius(6).inner_margin(egui::Margin::symmetric(7, 2)).show(ui, |ui| {
-        ui.label(RichText::new(text).size(10.5).strong().color(fore));
-    });
-}
-
-pub fn heading(ui: &mut egui::Ui, palette: &Palette, title: &str, subtitle: &str) {
-    ui.vertical(|ui| {
-        ui.label(title_text(title, 15.0));
-        ui.label(RichText::new(subtitle).size(12.5).color(palette.muted));
-    });
-}
-
-pub fn label_block(ui: &mut egui::Ui, palette: &Palette, label: &str, hint: &str) {
-    ui.vertical(|ui| {
-        ui.label(RichText::new(label).size(13.0).strong());
-        ui.label(RichText::new(hint).size(11.5).color(palette.muted));
-    });
-}
-
 /// The main action: the hotel's green "go" button with a darker edge, or the brand colour.
 pub fn primary_button(text: &str) -> egui::Button<'static> {
     let button = egui::Button::new(RichText::new(text.to_string()).strong().color(Color32::WHITE)).min_size(egui::vec2(0.0, 32.0));
@@ -62,12 +42,6 @@ pub fn primary_button(text: &str) -> egui::Button<'static> {
 
 pub fn secondary_button(text: &str) -> egui::Button<'static> {
     egui::Button::new(RichText::new(text.to_string())).corner_radius(if theme::hotel() { 6 } else { 8 }).min_size(egui::vec2(0.0, 32.0))
-}
-
-/// A status dot.
-pub fn dot(ui: &mut egui::Ui, color: Color32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-    ui.painter().circle_filled(rect.center(), 4.0, color);
 }
 
 /// A wide button with a bold title and a description under it (the answers of a question).

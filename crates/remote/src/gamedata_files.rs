@@ -101,7 +101,7 @@ fn error_of(result: &CommandResult) -> String {
     all.split('\n')
         .map(str::trim)
         .filter(|l| l.starts_with("ERROR: "))
-        .last()
+        .next_back()
         .map(|l| l[7..].to_string())
         .unwrap_or_else(|| format!("{}{}", result.output, result.error).trim().to_string())
 }

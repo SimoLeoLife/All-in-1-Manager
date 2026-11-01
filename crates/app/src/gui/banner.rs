@@ -169,7 +169,7 @@ impl Block {
             for row in 0..floors {
                 for column in 0..columns {
                     let at = b + axis * (5.0 + column as f32 * step) + UP * (floor * 0.45 + row as f32 * floor);
-                    let on = (row * 3 + column * 5 + floors) % if dark { 3 } else { 5 } == 0;
+                    let on = (row * 3 + column * 5 + floors).is_multiple_of(if dark { 3 } else { 5 });
                     let w = axis * (step - 4.0);
                     let hgt = UP * (floor * 0.55);
                     painter.add(Shape::convex_polygon(

@@ -139,7 +139,7 @@ fn scan(folder: &Path, mapping: &AssetMapping) -> Vec<LocalFile> {
             continue;
         }
         if let Some(only) = &mapping.only {
-            if !only.iter().any(|o| *o == name) {
+            if !only.contains(&name) {
                 continue;
             }
         }

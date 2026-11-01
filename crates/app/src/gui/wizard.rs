@@ -34,7 +34,6 @@ pub struct FinishInfo {
     pub site: Option<WebAccessSettings>,
     pub putty_key: Option<PathBuf>,
     pub steps: Vec<(String, StepSummary)>,
-    pub server: Arc<dyn Server>,
 }
 
 /// The last wizard page.
@@ -168,10 +167,6 @@ impl Wizard {
         self.index == self.finish_index()
     }
 
-    fn first_install(&self) -> usize {
-        usize::from(self.has_key_step)
-    }
-
     /// Called each time the page is shown: starts the first step for a new login, or shows the step where the
     /// wizard was. (OpenAsync)
     pub fn open(&mut self, server: Option<&Arc<dyn Server>>) {
@@ -189,13 +184,6 @@ impl Wizard {
         self.failed.iter_mut().for_each(|f| *f = false);
         self.already_done.iter_mut().for_each(|d| *d = false);
         self.start(server);
-    }
-
-    /// Leaving with Back ends this run: opening the wizard again starts at its first step (the login stays).
-    pub fn reset(&mut self) {
-        if !self.busy {
-            self.started_for = None;
-        }
     }
 
     fn start(&mut self, server: &Arc<dyn Server>) {
@@ -289,7 +277,7 @@ impl Wizard {
                     let site_url = open_url.and_then(|f| f()).or_else(|| web.configured.as_ref().map(|s| s.url()));
                     let keys = aio_core::config_dir::keys_directory(&host);
                     let putty_key = newest_ppk(&keys);
-                    let info = FinishInfo { host, ssh_port: server.login().port, site: web.configured, putty_key, steps, server };
+                    let info = FinishInfo { host, ssh_port: server.login().port, site: web.configured, putty_key, steps };
                     *status.lock().unwrap() = t("Installation completed.").to_string();
                     (builder(info), site_url)
                 }

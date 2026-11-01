@@ -48,8 +48,6 @@ pub struct Fixed;
 
 impl Fixed {
     pub fn brand() -> Color32 { pick("#0E86C4", "#4F5FE6") }
-    pub fn brand_hover() -> Color32 { pick("#0A76AE", "#4352D4") }
-    pub fn go_hover() -> Color32 { hex("#4DB842") }
     pub fn hotel_yellow() -> Color32 { hex("#FFCD38") }
     pub fn sidebar() -> Color32 { pick("#0E3A52", "#0E1424") }
     pub fn sidebar_hover() -> Color32 { pick("#155072", "#1A2338") }
@@ -190,9 +188,12 @@ pub fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(FontFamily::Name("bold".into()), with_fallbacks("ubuntu-bold"));
     if hotel() {
         fonts.families.insert(FontFamily::Proportional, with_fallbacks("ubuntu"));
-    } else if let Some(family) = fonts.families.get_mut(&FontFamily::Proportional) {
-        // egui's own font has no arrows (→) and few symbols: Ubuntu fills them in.
-        family.push("ubuntu".into());
+    }
+    // Arrows (→ ← ↑ ↓ ⇄), checks and box symbols are in none of the fonts above: the symbol part of DejaVu Sans fills
+    // them in for every family.
+    add("symbols", include_bytes!("../../assets/fonts/DejaVuSans-Symbols.ttf"));
+    for family in fonts.families.values_mut() {
+        family.push("symbols".into());
     }
     ctx.set_fonts(fonts);
 }

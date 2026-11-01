@@ -23,7 +23,6 @@ pub mod login;
 pub mod mariadb;
 pub mod nginx;
 pub mod octane;
-pub mod pending;
 pub mod php;
 pub mod remove_cms;
 pub mod remove_crowdsec;

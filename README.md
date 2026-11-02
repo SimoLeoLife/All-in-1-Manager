@@ -29,7 +29,9 @@ are what the server prints, and what you paste into a question.
 
 **Settings → Look** switches between this **Hotel** look and the **Professional** look of the All-in-1 Converter
 (indigo, soft cards). It is stored in `configuration/settings.json` and applies at the next start; **Restart
-now** starts the installer again right away (it waits while a step runs). Light or dark follows the system in both.
+now** starts the installer again right away (it waits while a step runs). Both looks come in day and night: the
+switch at the top right (a sun with a cloud, or a moon with stars) changes it at once, and **Settings → Day or night**
+also has **Follow the system**, the default.
 
 ![Dashboard](public/docs/screenshots/dashboard.png)
 
@@ -46,20 +48,56 @@ against the branches chosen in **Settings → Repository branches**. A component
 or Update AtomCMS) with its question and progress there. Octane and Octane-Renderer are updated and built together,
 so both rows run Update Octane. AtomCMS gets a row of its own once it is installed.
 
+## At a glance
+
+- **One program, nothing to install**: one `.exe` for Windows and one file for Linux, with fonts, translations and
+  the client images inside. It updates itself when a new release is out.
+- **The whole server in one wizard**: SSH key, NGINX, PHP 8.5, MariaDB 12.3, Node.js, the Polaris / Octane clones,
+  the emulator as a service, Traefik with Let's Encrypt (and Cloudflare), the Octane client, hardening and SSH keys
+  only. Every step says what it will do first, and can be run again.
+- **Addons**: AtomCMS, EpicNext or your own CMS, Gitea, Fail2Ban, CrowdSec, Deploy Assets, an Asset Explorer and a
+  SQL Editor over the SSH tunnel.
+- **Running the hotel**: restarts, updates of the emulator, Octane, AtomCMS and the containers, database backup and
+  import (also PlusEMU), live server status, the emulator's wired CPU, an SSH terminal in the window, a **Health
+  check** with a fix for each problem, and a **History** of every run with its log.
+- **Safe to try**: `--dry-run` shows every command a step would send, without a server. The commands are the C#
+  installer's own, checked byte for byte.
+
+## Quick start
+
+1. Download `all-in-1-installer-windows-x64.exe` or `all-in-1-installer-linux-x64` from the
+   [releases](https://github.com/duckietm/All-in-1-installer/releases) and start it (on Linux: `chmod +x` first).
+2. Log in to your server: its address, `root` (or a user with sudo) and the password or an SSH key.
+3. **Install New Server** and follow the steps. Each one explains what it does; **Skip** leaves it out.
+4. Optional: a CMS, Gitea, Fail2Ban or CrowdSec under **ADDONS**, then **Deploy Assets** for the game's files.
+5. Afterwards **Tools** runs the hotel: **Health check** first when something seems wrong.
+
+To look around first: `all-in-1-installer --dry-run` logs in to nothing and only shows the commands.
+
+## Contents
+
+- [Requirements](#requirements)
+- [Install New Server, step by step](#install-new-server-step-by-step)
+- [Addons](#addons): [CMS](#cms), [Gitea](#gitea), [Fail2Ban](#fail2ban), [CrowdSec](#crowdsec),
+  [Deploy Assets](#deploy-assets), [Asset Explorer](#asset-explorer), [SQL Editor](#sql-editor)
+- [Settings](#settings) · [Debug](#debug) · [Tools](#tools) · [Health check and History](#health-check-and-history)
+- [Updating the installer itself](#updating-the-installer-itself) · [Building](#building) ·
+  [Project layout](#project-layout) · [Credits](#credits)
+
 ## Requirements
 
 **On your computer** (Windows 10/11 x64 or Linux x64): nothing. The installer is one file, with everything it
 needs inside (fonts, the client images for Deploy Assets). Download `all-in-1-installer-windows-x64.exe` or
-`all-in-1-installer-linux-x64` from the [releases](https://github.com/SimoLeoLife/All-in-1-installer/releases), or
+`all-in-1-installer-linux-x64` from the [releases](https://github.com/duckietm/All-in-1-installer/releases), or
 [build it](#building). On Linux it needs a desktop (X11 or Wayland) and OpenGL.
 
 **The server**: a fresh Ubuntu Server (22.04 or newer) or Debian (12 or newer) machine you can reach over SSH as
 root or as a user with sudo rights. Everything else (NGINX, PHP, MariaDB, Java, Node.js, Docker ...) is installed
 by the wizard.
 
-## Status
+## Install New Server, step by step
 
-**Step 1 – Logging in** (done)
+### Logging in (before the steps)
 
 When the program starts, it asks for the server first. **One login is used for everything**: Install New Server,
 the addons and the tools. It stays open until you close the program or the server drops the connection.
@@ -106,7 +144,7 @@ Every step uses `Server::run_as_root` (`source/crates/remote/src/server.rs`), wh
 or through sudo. Files copied over SFTP into folders only root can open (the database backups) go through a private
 staging folder in `/tmp` when the login is not root.
 
-**Step 2 – SSH key for root** (done)
+### Step 1 – SSH key for root
 
 **Install New Server** starts with the SSH key step, which puts a key in `/root/.ssh/authorized_keys`, so the next
 login can be root with that key. Choose one:
@@ -144,7 +182,7 @@ For a generated key it then opens a second SSH session **as root with the new ke
 If that fails, it reports why (for example `PermitRootLogin no` in sshd). The second session only
 trusts the host key seen during the first login.
 
-### The configuration directory
+#### The configuration directory
 
 `configuration/` is created next to the installer (falling back to
 `%LOCALAPPDATA%\All-in-1 Installer\configuration` or `~/.local/share/All-in-1 Installer/configuration`
@@ -171,7 +209,7 @@ Log in later with the generated key (ssh asks for the key password):
 ssh -i "configuration/keys/<server>/id_ed25519" root@<server>
 ```
 
-**Step 3 – NGINX mainline** (done)
+### Step 2 – NGINX mainline
 
 After the SSH key, **Next: NGINX** installs the web server:
 
@@ -208,7 +246,7 @@ Before every `apt-get update` the installer checks the **server clock** against 
 on, because apt refuses repository files that seem to come from the future
 (`Release file ... is not valid yet`).
 
-**Step 4 – PHP 8.5 with PHP-FPM** (done)
+### Step 3 – PHP 8.5 with PHP-FPM
 
 After NGINX, **Next: PHP** installs:
 
@@ -242,7 +280,7 @@ location ~ \.php$ {
 }
 ```
 
-**Step 5 – MariaDB 12.3** (done)
+### Step 4 – MariaDB 12.3
 
 After PHP, **Next: MariaDB** installs the database:
 
@@ -292,7 +330,7 @@ cms_password=...
 Running the step again reuses these passwords. If the users exist on the server but there is no saved file
 (e.g. from another PC), new passwords are set and saved. The step says so before you install.
 
-**Step 6 – Node.js 26, Composer and Yarn** (done)
+### Step 5 – Node.js 26, Composer and Yarn
 
 After MariaDB, **Next: Node.js** installs the build tools, following your commands:
 
@@ -316,7 +354,7 @@ The step uses and tests the tools it installs in `/usr/bin`, also when an older 
 as a warning with their paths, so typing `node` really runs Node.js 26 after you remove them; the installer
 does not delete them itself.
 
-**Steps 7–9 – Clone Polaris, Octane and Octane-Renderer** (done)
+### Steps 6–8 – Clone Polaris, Octane and Octane-Renderer
 
 | Step | Repository | Folder on the server |
 |------|------------|----------------------|
@@ -344,7 +382,7 @@ has, because Polaris writes it as `dev` and Octane and the Renderer as `Dev`.
 
 ![Clone](public/docs/screenshots/clone-intro.png)
 
-**Step 10 – Build and run the Polaris emulator** (done)
+### Step 9 – Build and run the Polaris emulator
 
 After the clones, **Next: Emulator** builds `/var/www/emulator/Emulator` and runs it as a service. On the intro
 page you choose:
@@ -402,7 +440,7 @@ tail -f /var/log/emu/emulator.log  # follow the log
 cd /var/www/emulator/Emulator && sudo -u emulator ./build.sh && systemctl restart emulator   # rebuild
 ```
 
-**Step 11 – Web access: Docker and Traefik** (done)
+### Step 10 – Web access: Docker and Traefik
 
 The step asks three questions:
 
@@ -459,7 +497,7 @@ cd /opt/traefik && docker compose logs -f traefik        # Traefik log (certific
 cd /opt/traefik && docker compose pull && docker compose up -d   # update Traefik
 ```
 
-**Step 12 – Octane client** (done)
+### Step 11 – Octane client
 
 Uses the address from the web access step; nothing to fill in. For `https://example.com`:
 
@@ -511,7 +549,7 @@ nano /var/www/Octane/public/configuration/ui-config.json   # e.g. hotel.name
 /var/www/Octane/build.sh                                   # rebuild dist/ with it
 ```
 
-**Step 13 – Harden the server** (done)
+### Step 12 – Harden the server
 
 Nothing to fill in.
 
@@ -565,7 +603,7 @@ Nothing to fill in.
 5. **Log in again**: a new SSH login through the firewall proves you are not locked out (the current session stays
    open; if it fails, the step says so and `ufw disable` undoes it).
 
-**Step 14 – SSH login: keys only (optional)**
+### Step 13 – SSH login: keys only (optional)
 
 After Harden. You choose: **Keep password login** (changes nothing, or allows passwords again), or **Turn password
 login off: only SSH keys can log in**. A warning says what that means: lose your key and the only way in is the
@@ -585,7 +623,7 @@ reload ssh.
 
 ![SSH login step](public/docs/screenshots/ssh-login-step.png)
 
-**Completed – upload the assets** (done)
+### Completed – upload the assets
 
 After the last step (done or skipped) the wizard shows **Successfully completed** (or *Completed, with steps to look
 at* when a step was skipped or failed), with what every step did, and then:
@@ -1271,7 +1309,7 @@ recorded.
 
 ## Updating the installer itself
 
-The program checks at startup whether a newer release of <https://github.com/SimoLeoLife/All-in-1-installer> is out
+The program checks at startup whether a newer release of <https://github.com/duckietm/All-in-1-installer> is out
 (releases tagged `rust-v<version>`). When there is one, it says what is new and offers **Update and restart**: the
 release file is downloaded next to the running program, the running one is renamed to `<name>.old`, the new one takes
 its place under the same name, and the program starts again. **Later** keeps the version you have; the question comes
@@ -1321,10 +1359,18 @@ no output, so the steps take the path of a fresh server. Use it to read exactly 
 ### Screenshots
 
 `AIO_SCREENSHOT=<file.png>` saves one screenshot of the window and closes it; `AIO_SCREENSHOT_PAGE` picks the page
-(`dashboard`, `install`, `cms`, `gitea`, `fail2ban`, `crowdsec`, `deploy`, `explorer`, `sql`, `debug`, `tools`, `status`,
-`monitor`, `terminal`, `settings`, `about`, `login`), `AIO_SCREENSHOT_CONNECT=1` logs in to the dry run first,
-`AIO_SCREENSHOT_THEME=dark|light`, `AIO_SCREENSHOT_LOOK=hotel|professional` and `AIO_SCREENSHOT_LANG=<code>` set the
-rest. The pictures in `public/docs/screenshots` are made this way.
+(`dashboard`, `install`, `cms`, `customcms`, `epicnext`, `gitea`, `fail2ban`, `crowdsec`, `deploy`, `explorer`, `sql`,
+`debug`, `tools`, `status`, `doctor`, `history`, `monitor`, `terminal`, `settings`, `about`, `login`),
+`AIO_SCREENSHOT_STEP=<n>` the n-th step of that page's wizard, `AIO_SCREENSHOT_CONNECT=1` logs in to the dry run
+first (the health check then finds a sample server), and `AIO_SCREENSHOT_THEME=dark|light`,
+`AIO_SCREENSHOT_LOOK=hotel|professional` and `AIO_SCREENSHOT_LANG=<code>` set the rest. For example:
+
+```bash
+AIO_SCREENSHOT=install.png AIO_SCREENSHOT_PAGE=install AIO_SCREENSHOT_STEP=2 AIO_SCREENSHOT_CONNECT=1 all-in-1-installer
+```
+
+The pictures in `public/docs/screenshots` are made this way with the latest release, in English and the light theme
+(the dark ones in the dark theme), from a folder whose `configuration/settings.json` lists a few sample servers.
 
 ### Parity with the C# installer
 

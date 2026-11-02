@@ -246,6 +246,11 @@ Before every `apt-get update` the installer checks the **server clock** against 
 on, because apt refuses repository files that seem to come from the future
 (`Release file ... is not valid yet`).
 
+Every `apt-get` (and `dpkg -i`) also **waits while another apt runs**, instead of stopping with
+`Could not get lock /var/lib/dpkg/lock-frontend`: on a fresh Ubuntu, `unattended-upgrades` installs updates for a
+while after the first boot. The log says it is waiting (a line every minute); after 30 minutes the step stops and
+asks to wait or reboot. The locks are read from `/proc/locks`, so a quiet server never waits.
+
 ### Step 3 – PHP 8.5 with PHP-FPM
 
 After NGINX, **Next: PHP** installs:
@@ -480,6 +485,15 @@ https://example.com/api/...  Traefik          -> Polaris    http://127.0.0.1:209
    redirects to https and the Let's Encrypt certificate (HTTP challenge) is renewed automatically. With
    Cloudflare, `X-Forwarded-For` is only trusted from Cloudflare's published IP ranges; without it, Traefik
    writes the header itself, so it cannot be faked. Ports 80 and 443 are opened in ufw when it is active.
+
+   **www**: a hotel on a domain of its own also answers on its second name, `example.com` on `www.example.com`
+   and `www.example.com` on `example.com` (also for two-part endings such as `example.co.uk`). A subdomain
+   (`test.example.com`), `localhost` and an IP address are the only name. The second name **redirects** (301) to
+   the address you entered, keeping the path, so cookies, Polaris' websocket whitelist and the CMS' own URL keep
+   one name; it has a router and certificate of its own in `dynamic/hotel-www.yml`, so it can never cost the
+   address its certificate. That file is only written when the second name has a DNS record that points where the
+   address points (any record with Cloudflare); otherwise the log says which record to add (an A record, or a
+   CNAME to the address for `www`), and running the step again adds the redirect.
 4. **Polaris**: the address is added to `ws.whitelist` (websocket origins and CORS for `/api`), and
    `ws.ip.header = X-Forwarded-For`, so bans and rate limits see the visitor's IP; with Cloudflare also
    `ws.ip.header.trusted` = Cloudflare's ranges (see **The players' real IP behind Cloudflare** below). The emulator
@@ -1330,6 +1344,18 @@ Requires Rust (stable, 1.85 or newer) from <https://rustup.rs>. On Linux also th
 ```bash
 sudo apt-get install -y pkg-config libxkbcommon-dev libgl1-mesa-dev libgtk-3-dev
 ```
+
+The quickest way: run the build script in the root of the repository. On Windows double-click **`build.cmd`** for a
+menu, or run it in a terminal; on Linux use `./build.sh`:
+
+```
+build release      ./build.sh release     # the program to hand out -> public/release/ (with Assets/ next to it)
+build dev          ./build.sh dev         # debug build             -> public/dev/
+build run          ./build.sh run         # debug build, and start it
+build test         ./build.sh test        # all tests
+```
+
+On Windows it needs Visual Studio's "Desktop development with C++" (Rust uses its linker). The same with Python:
 
 ```bash
 python source/tools/build.py dev               # debug build    -> public/dev/all-in-1-installer(.exe)

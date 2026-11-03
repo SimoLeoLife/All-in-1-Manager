@@ -70,7 +70,7 @@ so both rows run Update Octane. AtomCMS gets a row of its own once it is install
    [releases](https://github.com/duckietm/All-in-1-installer/releases) and start it (on Linux: `chmod +x` first).
 2. Log in to your server: its address, `root` (or a user with sudo) and the password or an SSH key.
 3. **Install New Server** and follow the steps. Each one explains what it does; **Skip** leaves it out.
-4. Optional: a CMS, Gitea, Fail2Ban or CrowdSec under **ADDONS**, then **Deploy Assets** for the game's files.
+4. Optional: a CMS, Gitea, Fail2Ban, CrowdSec or the default catalogue under **Addons**, then **Deploy Assets** for the game's files.
 5. Afterwards **Tools** runs the hotel: **Health check** first when something seems wrong.
 
 To look around first: `all-in-1-installer --dry-run` logs in to nothing and only shows the commands.
@@ -702,7 +702,10 @@ A new step implements `InstallStep` (`source/crates/app/src/gui/step.rs`) and is
 
 ## Addons
 
-The sidebar has an **ADDONS** section for things that go on top of a finished server installation.
+**Addons** (in the sidebar under SERVER) opens a menu with one button per addon, for things that go on top of a
+finished server installation. In the Hotel look every button (the addons, the dashboard and Tools) has its own
+soft Habbo-style picture in the background (a room, the lido, a disco, bricks, a garden, space ...), with the text on a solid
+plate so it reads the same on every picture; the Professional look keeps the plain tiles.
 The addons and Tools use the login from the start of the program: there is no separate login per page. **Back**
 returns to the dashboard and keeps the login (and the SQL Editor's database connection) open.
 
@@ -1018,6 +1021,75 @@ Later: **Tools → CrowdSec whitelist and bans** edits the whitelist (Traefik re
 (its data and enrollment) stays, so installing again needs no new key, unless you tick **Also delete CrowdSec's data
 and enrollment**. Remove the engine from your console yourself when you no longer need it.
 
+### Default catalogue
+
+**Addons → Default catalogue** installs the catalogue that comes with the installer, for a new hotel: the catalogue
+pages and items, the furniture list (`items_base`) and the client's `FurnitureData.json`, which belong together. The
+step shows the catalogue's export date and what the hotel has now. Run Install New Server first (MariaDB, the
+emulator and Octane); the furniture files and catalogue icons come from [Deploy Assets](#deploy-assets).
+
+1. **Check**: the hotel database exists with the emulator's tables, and gamedata exists. When the hotel already has a
+   catalogue, a box confirms that it may be replaced.
+2. **Upload** `Catalog_Export.sql` and `FurnitureData.json` (packed into the program, about 1.7 MB) to the backup
+   folder.
+3. **Stop the emulator**, once, for everything below (players are disconnected). Another furniture language is
+   downloaded before this, while the hotel still runs, so a failed download changes nothing.
+4. **Backup and import**: a safety backup of the database (`<db>-before-catalog-<time>.sql.gz`), the SQL drops and
+   recreates the catalogue tables and `items_base` (and sets the catalogue's item ids in `emulator_settings`), and
+   `FurnitureData.json` goes to `gamedata/config` (an existing one is kept as `.bak-<time>`). A failed import puts the
+   database back.
+5. **Furniture language** (see below).
+6. **Start the emulator**, once, and wait until it has loaded. It also starts when a step above failed. When it does
+   not load with the new catalogue, the database (from the backup of step 4) and the old `FurnitureData.json` go back
+   and it starts on them.
+
+**Furniture language**: the catalogue's own `FurnitureData.json` is Dutch. Choose another language with its flag
+(English, Español, Português, Deutsch, Français, Italiano, Nederlands, Suomi, Türkçe) and, after the import, the
+installer does what the [All-in-1 Converter](https://github.com/duckietm/all-in-1-converter) does:
+
+- downloads that hotel's furnidata on this computer (`https://www.<hotel>/gamedata/furnidata_xml/1`) and converts it to
+  `FurnitureData.json` (`Furnidata.cs`, `FurnitureDataModel.cs`);
+- keeps the hotel's own furni that the official furnidata does not have, with their own names (so they still show);
+- brings the database in line with it (`FixSpriteIDSettings.cs`): `items_base.sprite_id` = the furnidata's id per
+  classname, and `catalog_items.item_ids` for the `*_single` wallpapers, floors and landscapes and by public name; a
+  bundle that sells several furni (`1;2`) keeps them;
+- sets the offer ids (`SetOfferID.cs`): `catalog_items.offer_id` = the furnidata's `offerid` per classname, and a new
+  unique one above 60000 (in the furnidata too) where it is `-1`;
+- puts `FurnitureData.json` in `gamedata/config` (the old one kept as `.bak-<time>`) and runs the updates in batches of
+  100, after a safety backup; when something fails, both go back. In the addon this happens while the emulator is
+  stopped for the import (one stop and one start for the whole step); Tools → Furniture language stops and starts it
+  itself.
+
+**ExternalTexts.json** (optional): tick **Also ExternalTexts.json (the client's texts)** in the step, or answer
+**Furniture and texts** in the tool, and the same hotel's `external_flash_texts` (`https://<hotel>/gamedata/external_flash_texts/1`)
+is downloaded and converted like the converter's `Flash_Texts.cs` (`key=value` lines; blank lines and `#` comments
+skipped; split at the first `=`). Texts the hotel has but the official file does not stay (the emulator writes the
+names of custom badges there, hotels add their own). It goes to `gamedata/config/ExternalTexts.json` while the
+emulator is stopped (the old file kept as `.bak-<time>`), and comes back when the emulator does not load afterwards.
+
+**Catalogue page texts**: the captions and texts of the catalogue pages (`caption`, `page_text1`, `page_text2`,
+`page_text_details`, `page_text_teaser` of `catalog_pages` and `catalog_pages_bc`) follow the furniture language too.
+The translations are dictionaries in `source/crates/app/assets/catalog/texts/<lang>.json`, from the Dutch text as it
+is in the catalogue to the text in that language. A text in the database is recognised in any of the languages, so
+English → German works as well; a text that is in no dictionary (a page you wrote yourself) is never touched, and a
+text without a translation stays as it is. The changes go in one transaction while the emulator is stopped.
+
+Keeping them up to date after a new catalogue export:
+
+```bash
+python source/tools/catalog_texts.py --missing   # replace Full_Catalog.zip first; writes texts/<lang>.missing.json
+#   fill in the values of the .missing.json files (keep HTML tags, line breaks and %placeholders%)
+python source/tools/catalog_texts.py --merge     # into texts/<lang>.json
+cargo test -p aio-app                            # checks every translation against its original
+```
+
+Switching later, without importing the catalogue again: **Tools → Furniture language** (download first, then one stop
+of the emulator, the database, `FurnitureData.json` and optionally `ExternalTexts.json`, and one start).
+
+A marker in `gamedata/config/.all-in-1-catalog` remembers the installed version, so the step shows **Skip (already
+installed)** for the same catalogue. Meant for a new hotel: furniture players already own keeps its `items_base`
+number, so on a hotel with a different furniture list it would turn into other furniture.
+
 ### Deploy Assets
 
 **Deploy Assets** copies what the [All-in-1 downloader](https://github.com/duckietm/all-in-1-converter) downloaded to
@@ -1260,6 +1332,7 @@ backup at the bottom. Without a login the server tools are greyed out, with a **
 | **Whitelist and bans** | for the [Fail2Ban](#fail2ban) addon: edit the whitelist (addresses and networks that are never banned, with **Add my IP**) and tick banned addresses to let them in again. Saving rewrites `/etc/fail2ban/jail.d/all-in-1.local` (checked with `fail2ban-client -t` first) and restarts fail2ban; on a server without fail2ban it points to the addon |
 | **Create full database backup** | `mariadb-dump --single-transaction --routines --triggers --events` of the hotel database into `/var/backups/all-in-1/<db>-<time>.sql.gz` (root only; the newest 10 are kept), then downloads it over SFTP to a file you choose (owner-only on Linux/macOS) |
 | **Import full database** | uploads a `.sql` or `.sql.gz`, makes a safety backup (`<db>-before-import-<time>.sql.gz`), stops the emulator, recreates the database with its character set and imports (database names in `CREATE DATABASE` / `USE` lines become the hotel's), clears AtomCMS' cache, and starts the emulator, which updates the database to its version. A file that is not a SQL dump is refused before anything changes |
+| **Furniture language** | the furniture names and descriptions in another hotel's language (the 9 Habbo hotels): its furnidata is downloaded and converted, the hotel's own furni stay, and `items_base` / `catalog_items` follow it (sprite ids, catalogue items, offer ids), after a safety backup and with the emulator restarted. See [Default catalogue](#default-catalogue) |
 | **Import Plus database** | a PlusEMU dump (such as Plus' fresh install) into the Polaris hotel database: the reverse of [plus-migrator](https://github.com/plus-emulator/plus-migrator). Choose **Furniture and catalog** or **Furniture only**. It uploads the `.sql` / `.sql.gz`, makes a safety backup (`<db>-before-plus-import-<time>.sql.gz`), stops the emulator, loads the dump into a staging database `plus_import` next to the hotel's, converts, drops the staging database and starts the emulator. See [Import Plus database](#import-plus-database) |
 | **Recover SQL password** | gives MariaDB's root a new random 32-character password (asks first) and saves it in `configuration/database/<server>/mariadb.txt`; a changed file is kept as `mariadb.txt.bak-<time>`. Changes `root@localhost` (its socket login stays) and `root@'%'` when it exists. When root cannot log in through the socket any more, MariaDB is restarted for a moment with `--skip-grant-tables --skip-networking` to change it and then started normally. Then it tests the new password over 127.0.0.1 and the socket. Without a saved file, the CMS and emulator accounts are read from AtomCMS' `.env` and the emulator's `config.ini`, so the new file is complete. The emulator and AtomCMS use their own accounts and are not affected |
 | **Check for updates** | `git fetch` of the emulator, Octane, Octane-Renderer and AtomCMS, and per clone how many commits a `git pull` would bring in, with the newest one. The commits are counted against the branch chosen in **Settings → Repository branches**, not against the branch the clone happens to be on, so a clone still on `main` while `dev` is chosen reports what `dev` has and says `main → dev`. AtomCMS has no choice and is counted against its own branch. A fetch only fills the remote branches: no file on the server is changed and the hotel keeps running. The same check runs by itself right after you log in here, and again after an update, so **Update emulator** and **Update Octane** say `3 new commit(s)` or `up to date` before you press them |

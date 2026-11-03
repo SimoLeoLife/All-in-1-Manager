@@ -11,6 +11,7 @@ pub mod flags;
 pub mod icons;
 pub mod language_picker;
 pub mod log_view;
+pub mod scenes;
 pub mod screenshot;
 pub mod step;
 pub mod theme;
@@ -34,6 +35,7 @@ use wizard::{Wizard, WizardAction};
 pub enum Page {
     Dashboard,
     Install,
+    Addons,
     AtomCms,
     CustomCms,
     EpicNext,
@@ -44,6 +46,7 @@ pub enum Page {
     RemoveFail2Ban,
     CrowdSec,
     RemoveCrowdSec,
+    DefaultCatalog,
     DeployAssets,
     AssetExplorer,
     SqlEditor,
@@ -138,6 +141,7 @@ pub(crate) struct Wizards {
     pub(crate) remove_fail2ban: Wizard,
     pub(crate) crowdsec: Wizard,
     pub(crate) remove_crowdsec: Wizard,
+    pub(crate) default_catalog: Wizard,
     pub(crate) deploy: Wizard,
 }
 
@@ -155,12 +159,13 @@ impl Wizards {
             Page::RemoveFail2Ban => &mut self.remove_fail2ban,
             Page::CrowdSec => &mut self.crowdsec,
             Page::RemoveCrowdSec => &mut self.remove_crowdsec,
+            Page::DefaultCatalog => &mut self.default_catalog,
             Page::DeployAssets => &mut self.deploy,
             _ => return None,
         })
     }
 
-    fn all(&self) -> [&Wizard; 12] {
+    fn all(&self) -> [&Wizard; 13] {
         [
             &self.install,
             &self.atom,
@@ -173,6 +178,7 @@ impl Wizards {
             &self.remove_fail2ban,
             &self.crowdsec,
             &self.remove_crowdsec,
+            &self.default_catalog,
             &self.deploy,
         ]
     }
@@ -429,6 +435,10 @@ impl App {
             Page::RemoveFail2Ban => (t("Remove Fail2Ban").into(), t("Addon: fail2ban stopped and uninstalled; every ban is lifted.").into()),
             Page::CrowdSec => ("CrowdSec".into(), t("Addon: blocks attackers in Traefik, with the community's blocklist; Cloudflare aware.").into()),
             Page::RemoveCrowdSec => (t("Remove CrowdSec").into(), t("Addon: the bouncer out of Traefik and CrowdSec stopped; its data only when you choose.").into()),
+            Page::DefaultCatalog => (
+                t("Default catalogue").into(),
+                t("Addon: a complete catalogue for a new hotel, with its furniture list and FurnitureData.json.").into(),
+            ),
             Page::RemoveCms => (t("Remove the CMS").into(), t("Addon: Octane as the hotel's website again, as after the server installation.").into()),
             Page::AssetExplorer => (
                 "Asset Explorer".into(),
@@ -476,6 +486,7 @@ impl App {
             Page::About => (t("About").into(), "All-in-1 Installer".into()),
             Page::Settings => (t("Settings").into(), t("Your servers and default SSH key, your own SSH keys, and the All-in-1 downloader.").into()),
             Page::Dashboard => (t("Dashboard").into(), t("Set up a complete hotel server over SSH.").into()),
+            Page::Addons => (t("Addons").into(), t("Everything that goes on top of a finished server: pick one.").into()),
         };
         (title, subtitle)
     }
@@ -512,10 +523,25 @@ impl App {
                 let mut clicked = None;
                 let current = self.page;
                 let selected = |page: Page| match page {
-                    Page::AtomCms => matches!(current, Page::AtomCms | Page::CustomCms | Page::EpicNext | Page::RemoveCms),
-                    Page::Gitea => matches!(current, Page::Gitea | Page::RemoveGitea),
-                    Page::Fail2Ban => matches!(current, Page::Fail2Ban | Page::RemoveFail2Ban),
-                    Page::CrowdSec => matches!(current, Page::CrowdSec | Page::RemoveCrowdSec),
+                    // Every addon page belongs to Addons.
+                    Page::Addons => matches!(
+                        current,
+                        Page::Addons
+                            | Page::AtomCms
+                            | Page::CustomCms
+                            | Page::EpicNext
+                            | Page::RemoveCms
+                            | Page::Gitea
+                            | Page::RemoveGitea
+                            | Page::Fail2Ban
+                            | Page::RemoveFail2Ban
+                            | Page::CrowdSec
+                            | Page::RemoveCrowdSec
+                            | Page::DefaultCatalog
+                            | Page::DeployAssets
+                            | Page::AssetExplorer
+                            | Page::SqlEditor
+                    ),
                     Page::Tools => matches!(current, Page::Tools | Page::ServerStatus | Page::EmulatorMonitor | Page::Terminal | Page::Doctor),
                     other => current == other,
                 };
@@ -526,20 +552,12 @@ impl App {
                 };
                 nav(ui, t("Dashboard"), Icon::Home, Page::Dashboard);
                 // Each group folds away with a click on its heading; a folded group still shows the page you are on.
-                let groups: [(&str, &str, Vec<(&str, Icon, Page)>); 4] = [
-                    ("sidebar:server", t("SERVER"), vec![(t("Install New Server"), Icon::ServerPlus, Page::Install)]),
+                let groups: [(&str, &str, Vec<(&str, Icon, Page)>); 3] = [
+                    // The addons are one page of picture buttons, not a long list here.
                     (
-                        "sidebar:addons",
-                        t("ADDONS"),
-                        vec![
-                            ("CMS", Icon::Puzzle, Page::AtomCms),
-                            ("Gitea", Icon::Git, Page::Gitea),
-                            ("Fail2Ban", Icon::Shield, Page::Fail2Ban),
-                            ("CrowdSec", Icon::Shield, Page::CrowdSec),
-                            (t("Deploy Assets"), Icon::Download, Page::DeployAssets),
-                            ("Asset Explorer", Icon::FolderSync, Page::AssetExplorer),
-                            ("SQL Editor", Icon::Database, Page::SqlEditor),
-                        ],
+                        "sidebar:server",
+                        t("SERVER"),
+                        vec![(t("Install New Server"), Icon::ServerPlus, Page::Install), (t("Addons"), Icon::Puzzle, Page::Addons)],
                     ),
                     ("sidebar:tools", t("TOOLS"), vec![(t("Tools"), Icon::Wrench, Page::Tools), ("Debug", Icon::Bug, Page::Debug), (t("History"), Icon::History, Page::History)]),
                     ("sidebar:general", t("GENERAL"), vec![(t("Settings"), Icon::Cog, Page::Settings), (t("About"), Icon::Info, Page::About)]),
@@ -658,6 +676,7 @@ impl App {
             Page::RemoveFail2Ban => &self.wizards.remove_fail2ban,
             Page::CrowdSec => &self.wizards.crowdsec,
             Page::RemoveCrowdSec => &self.wizards.remove_crowdsec,
+            Page::DefaultCatalog => &self.wizards.default_catalog,
             Page::DeployAssets => &self.wizards.deploy,
             _ => return None,
         };
@@ -706,6 +725,13 @@ impl App {
             }
             Page::Settings => scroll(ui, |ui| self.settings.show(ui, palette, &shared)),
             Page::About => scroll(ui, |ui| self.about.show(ui, palette, &shared)),
+            Page::Addons => {
+                let mut clicked = None;
+                scroll(ui, |ui| clicked = views::addons::show(ui, palette));
+                if let Some(page) = clicked {
+                    self.navigate(page);
+                }
+            }
             _ => {
                 let mut clicked = None;
                 scroll(ui, |ui| clicked = self.dashboard.show(ui, palette, &shared, &self.tools));

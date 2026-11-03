@@ -703,9 +703,9 @@ A new step implements `InstallStep` (`source/crates/app/src/gui/step.rs`) and is
 ## Addons
 
 **Addons** (in the sidebar under SERVER) opens a menu with one button per addon, for things that go on top of a
-finished server installation. In the Hotel look every button (the addons, the dashboard and Tools) has its own
-soft Habbo-style picture in the background (a room, the lido, a disco, bricks, a garden, space ...), with the text on a solid
-plate so it reads the same on every picture; the Professional look keeps the plain tiles.
+finished server installation. In the Hotel look every button (the addons, the dashboard and Tools) is filled with its
+own colour (a soft gradient with a few light bubbles), with white text on it; every colour is dark enough for white
+text, which a test checks. The Professional look keeps the plain tiles.
 The addons and Tools use the login from the start of the program: there is no separate login per page. **Back**
 returns to the dashboard and keeps the login (and the SQL Editor's database connection) open.
 
@@ -1373,7 +1373,7 @@ backup at the bottom. Without a login the server tools are greyed out, with a **
 The conversion is `source/crates/remote/sql/plus-to-polaris-furniture.sql` and `plus-to-polaris-catalog.sql`, built into
 the program.
 
-**Settings backup** (no server needed): **Export encrypted settings** writes the whole configuration directory
+**Settings backup** (on the **Settings** page, no server needed): **Export encrypted settings** writes the whole configuration directory
 (SSH keys, .ppk files, MariaDB passwords of every server) to one `.aio-settings` file, encrypted with AES-256-GCM
 and a key derived from your password (PBKDF2-SHA256, 600,000 rounds). **Import encrypted settings** on another
 computer restores it; the settings already there are kept next to it as `configuration.bak-<time>`. A wrong

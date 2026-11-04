@@ -56,8 +56,11 @@ so both rows run Update Octane. AtomCMS gets a row of its own once it is install
 - **The whole server in one wizard**: SSH key, NGINX, PHP 8.5, MariaDB 12.3, Node.js, the Polaris / Octane clones,
   the emulator as a service, Traefik with Let's Encrypt (and Cloudflare), the Octane client, hardening and SSH keys
   only. Every step says what it will do first, and can be run again.
-- **Addons**: AtomCMS, EpicNext or your own CMS, Gitea, Fail2Ban, CrowdSec, Deploy Assets, an Asset Explorer and a
-  SQL Editor over the SSH tunnel.
+- **Addons**: AtomCMS, EpicNext or your own CMS, Gitea, Fail2Ban, CrowdSec, the default catalogue and a SQL Editor over the SSH
+  tunnel.
+- **Assets** (its own section in the sidebar): Habbo assets (Habbo's own furniture, clothes, effects, badges and
+  game data as .hab and JSON), Nitro retro (a retro's custom furniture and clothes), Deploy Assets and an Asset
+  Explorer.
 - **Running the hotel**: restarts, updates of the emulator, Octane, AtomCMS and the containers, database backup and
   import (also PlusEMU), live server status, the emulator's wired CPU, an SSH terminal in the window, a **Health
   check** with a fix for each problem, and a **History** of every run with its log.
@@ -70,7 +73,8 @@ so both rows run Update Octane. AtomCMS gets a row of its own once it is install
    [releases](https://github.com/duckietm/All-in-1-installer/releases) and start it (on Linux: `chmod +x` first).
 2. Log in to your server: its address, `root` (or a user with sudo) and the password or an SSH key.
 3. **Install New Server** and follow the steps. Each one explains what it does; **Skip** leaves it out.
-4. Optional: a CMS, Gitea, Fail2Ban, CrowdSec or the default catalogue under **Addons**, then **Deploy Assets** for the game's files.
+4. Optional: a CMS, Gitea, Fail2Ban, CrowdSec or the default catalogue under **Addons**, then **Habbo assets** and
+   **Deploy Assets** (sidebar → ASSETS) for the game's files.
 5. Afterwards **Tools** runs the hotel: **Health check** first when something seems wrong.
 
 To look around first: `all-in-1-installer --dry-run` logs in to nothing and only shows the commands.
@@ -80,7 +84,7 @@ To look around first: `all-in-1-installer --dry-run` logs in to nothing and only
 - [Requirements](#requirements)
 - [Install New Server, step by step](#install-new-server-step-by-step)
 - [Addons](#addons): [CMS](#cms), [Gitea](#gitea), [Fail2Ban](#fail2ban), [CrowdSec](#crowdsec),
-  [Deploy Assets](#deploy-assets), [Asset Explorer](#asset-explorer), [SQL Editor](#sql-editor)
+  [Habbo assets](#habbo-assets), [Nitro retro](#nitro-retro-custom-assets), [Deploy Assets](#deploy-assets), [Asset Explorer](#asset-explorer), [SQL Editor](#sql-editor)
 - [Settings](#settings) · [Debug](#debug) · [Tools](#tools) · [Health check and History](#health-check-and-history)
 - [Updating the installer itself](#updating-the-installer-itself) · [Building](#building) ·
   [Project layout](#project-layout) · [Credits](#credits)
@@ -805,7 +809,7 @@ imported assets; with an empty folder it clones the repository into `/var/www/ep
    the one already in `.env`, AtomCMS' `cms` login, or else a MariaDB account of its own, `epicnext` (made with root,
    with the cms account's rights on the hotel database only). `REDIS_URL` is left unset when no Valkey/Redis runs, and empty settings from `.env.example` (such as
    `DISCORD_WEBHOOK_URL=`) are commented out: EpicNext's settings check refuses empty values. Before the migrations
-   the step runs that check (`src/env.ts`) itself, so a wrong setting shows in seconds instead of after the build. `HOTEL_NAME`, `APP_URL` and `AUTH_URL` (the site's
+   the step runs that check (`src/env.ts`) itself, so a wrong setting shows in seconds instead of after the build. `HOTEL_NAME`, `APP_URL`, `NEXT_PUBLIC_APP_URL` and `AUTH_URL` (the site's
    address), `AUTH_TRUST_HOST=true` (behind Traefik), a random `AUTH_SECRET` (made once, so logins stay valid), and
    `RCON_HOST`/`RCON_PORT` from the emulator's `config.ini`.
 4. **Build**: `pnpm install --frozen-lockfile` (when EpicNext's lockfile pins versions younger than pnpm's minimum
@@ -1092,11 +1096,72 @@ A marker in `gamedata/config/.all-in-1-catalog` remembers the installed version,
 installed)** for the same catalogue. Meant for a new hotel: furniture players already own keeps its `items_base`
 number, so on a hotel with a different furniture list it would turn into other furniture.
 
+### Habbo assets
+
+**Habbo assets** (sidebar → ASSETS) downloads Habbo's own assets on this computer, the first part of the
+[All-in-1 converter](https://github.com/duckietm/all-in-1-converter) moved into the installer. No server connection is
+needed. Everything goes into `Habbo_Assets/gamedata` next to the configuration folder (or a folder you choose), laid
+out exactly like `/var/www/gamedata`, so **Deploy Assets** copies it as it is. Only `.hab` bundles, JSON and images
+are kept: what Habbo still serves as XML or text is converted to the JSON Octane loads, and no `.swf` or XML is
+saved. A file that is already there is not downloaded again, and an error page from Habbo's CDN is never saved as an
+asset.
+
+Pick the hotel (its language goes into the furnidata, productdata and texts), tick what you want and press
+**Download the selected**, or **Download all**:
+
+| Download | Into `gamedata/` |
+|---|---|
+| Badges (from all nine hotels) | `c_images/album1584` |
+| Clothes | `clothes/*.hab`, `config/FigureData.json`, `config/FigureMap.json` |
+| Effects | `effect/*.hab`, `config/EffectMap.json`, `config/HabboAvatarActions.json` |
+| Furnidata | `config/FurnitureData.json` |
+| Furniture | `furniture/*.hab`, `icons/*_icon.png` |
+| Catalogue icons | `c_images/catalogue` |
+| MP3 | `sounds` |
+| Productdata | `config/ProductData.json` |
+| Quest images | `c_images/Quests` |
+| Reception images | `c_images/reception`, `c_images/web_promo_small`, ... |
+| Texts | `config/ExternalTexts.json` |
+| Variables | `downloads/ExternalVariables.json` (stays on this computer) |
+| Pets | `pets/*.hab` |
+| Effect icons | `c_images/fx_icons` |
+
+Habbo has no download link for the effect icons (`fx_icon_<type>` for the avatar editor): they are inside the Habbo
+Classic app, in `habbo-inventory-com.hab` inside its `resources/app.asar`. Choose that `app.asar` (choosing it ticks
+**Effect icons**); **Download all** takes them along when it is set. **Clothes: make every clothing set wearable** turns off `sellable` in
+FigureData.json, the converter's "disable all sellable" question. The `.hab` files are saved as Habbo serves them
+(the converter's optional WebP repacking of their sheets is not part of this yet).
+
+### Nitro retro (custom assets)
+
+**Nitro retro** (sidebar → ASSETS) downloads a Nitro hotel's own furniture and clothes. Fill in the six values from its
+`renderer-config.json` (`furnidata.url`, `furni.asset.url`, `furni.asset.icon.url`, `avatar.asset.url`,
+`avatar.figuredata.url`, `avatar.figuremap.url`; a folder or the full `.../%libname%.nitro` pattern), give it a
+name and **Save**. Every retro is a **profile**: switch between them with one click, **+ New profile** starts an
+empty one, **Delete profile** removes one (its downloaded folder stays). Profiles are kept in Settings, so they are
+there next time (also saved when you press **Download**).
+
+- **Custom furniture**: the retro's FurnitureData.json, every furniture bundle and the icon of every colour. An old
+  Flash retro's (or Habbo's) furnidata XML works too: it is saved as FurnitureData.json, and its revision per furni
+  is used for hof_furni-style folders (`<folder>/<revision>/<name>.swf`, then `<folder>/<name>.swf`).
+- **Custom clothes**: FigureData.json, FigureMap.json and every clothing bundle (not hh_human_fx and hh_pets);
+  figuredata and figuremap XML are converted to JSON.
+
+Each profile downloads into `Habbo_Assets/custom/<name>/gamedata` (laid out like gamedata; characters a folder name
+cannot have become `_`), which Deploy Assets does **not** copy: upload
+what you want by hand with the Asset Explorer. A retro serves `.hab`, `.nitro` or `.swf`; the step finds out which
+for each bundle (trying the one that worked last first) and saves every bundle as `.hab`: a `.nitro` is repacked
+with the same files, a `.swf` is converted (furniture, clothes, pets and effects: the All-in-1 converter's SWF
+compilers ported to Rust, the JSON and sprite sheet as it makes them; the sheet stays PNG). A `.swf` that cannot be
+converted is kept in `custom/<name>/source/`; **Convert the kept .swf files** tries those again without downloading. The bundle formats and conversions live in their own crate, `aio-assets`, so other parts of the
+installer can use them too.
+
 ### Deploy Assets
 
-**Deploy Assets** copies what the [All-in-1 downloader](https://github.com/duckietm/all-in-1-converter) downloaded to
-`/var/www/gamedata` on the server, where Octane loads it. Set the downloader's executable in **Settings** first: its
-folder holds `Habbo_Default`.
+**Deploy Assets** (sidebar → ASSETS) copies what **Habbo assets** downloaded to `/var/www/gamedata` on the server, where Octane loads it,
+folder for folder (`gamedata/furniture` to `/var/www/gamedata/furniture`, and so on). When **Settings** name the
+[All-in-1 downloader](https://github.com/duckietm/all-in-1-converter), its `Habbo_Default` folder is copied too, with
+the mapping below; a file from Habbo assets that is already sent to the same place is not sent twice.
 
 ![Deploy Assets](public/docs/screenshots/deploy-assets.png)
 
@@ -1106,7 +1171,7 @@ files), and they keep their dates, so the next sync sends only what was download
 deleted: your own furniture, badges and the emulator's files stay. Before uploading it checks the free disk space;
 afterwards `gamedata-permissions` gives the emulator and NGINX access again.
 
-| Downloader (`Habbo_Default/...`) | Server (`/var/www/gamedata/...`) |
+| All-in-1 downloader (`Habbo_Default/...`) | Server (`/var/www/gamedata/...`) |
 |---|---|
 | `hof_furni/hab/*.hab` | `furniture` |
 | `hof_furni/icons/*.png` | `icons` |
@@ -1531,6 +1596,8 @@ source/                          The code
     src/credentials.rs           Generated MariaDB passwords and their file format
     src/keys.rs                  SSH keys: generation (encrypted OpenSSH + PuTTY .ppk v2), public key formats, .ppk reader
     src/backup.rs                Encrypted export / import of the configuration folder (AES-256-GCM, PBKDF2)
+  crates/assets/                 Habbo's asset bundles: .hab, .nitro and .asar read and written, and the
+                                 conversions to .hab every part of the installer uses (no network, no server)
   crates/remote/                 Everything that happens on the server
     src/server.rs                The Server trait: commands as root, streaming, follow, stdin, SFTP, tunnel, shell
     src/ssh.rs                   The SSH login (russh): password, keyboard-interactive or key, the OS check, sudo -> root

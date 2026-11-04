@@ -103,6 +103,8 @@ struct State {
     /// A folder or file the pickers chose, taken over by the page on the next frame.
     picked_folder: Option<PathBuf>,
     picked_source: Option<PathBuf>,
+    /// A JSON file chosen for one of the retro's fields: (field index, path).
+    picked_retro: Option<(usize, PathBuf)>,
 }
 
 pub struct GetAssetsView {
@@ -324,6 +326,10 @@ impl GetAssetsView {
             let mut state = self.state.lock().unwrap();
             (state.picked_folder.take(), state.picked_source.take())
         };
+        let picked_retro = self.state.lock().unwrap().picked_retro.take();
+        if let Some((index, path)) = picked_retro {
+            *retro_field(&mut self.edit.urls, index) = path.display().to_string();
+        }
         if let Some(folder) = folder {
             self.set_folder(Some(folder));
         }
@@ -399,6 +405,18 @@ impl GetAssetsView {
                     let hint = self.edit.urls.host().unwrap_or_else(|| t("For example the hotel's name").into());
                     ui.add(egui::TextEdit::singleline(&mut self.edit.name).hint_text(hint).desired_width(width).margin(egui::vec2(8.0, 6.0)));
                     ui.end_row();
+                    ui.vertical(|ui| {
+                        ui.set_min_width(230.0);
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.label(RichText::new(t("Format")).size(13.0).strong());
+                        ui.label(RichText::new(t("what the retro serves")).size(11.0).color(palette.subtle));
+                    });
+                    ui.horizontal(|ui| {
+                        for (value, label) in [("", t("Auto (try all)")), ("hab", ".hab"), ("nitro", ".nitro"), ("swf", ".swf")] {
+                            ui.radio_value(&mut self.edit.urls.format, value.to_string(), label);
+                        }
+                    });
+                    ui.end_row();
                     for (i, (label, key)) in RETRO_FIELDS.iter().enumerate() {
                         ui.vertical(|ui| {
                             ui.set_min_width(230.0);
@@ -406,8 +424,22 @@ impl GetAssetsView {
                             ui.label(RichText::new(t(label)).size(13.0).strong());
                             ui.label(RichText::new(format!("renderer-config.json: {key}")).size(11.0).color(palette.subtle));
                         });
-                        let width = (ui.available_width() - 4.0).max(240.0);
-                        ui.add(egui::TextEdit::singleline(retro_field(&mut self.edit.urls, i)).hint_text("https://").desired_width(width).margin(egui::vec2(8.0, 6.0)));
+                        // The JSON fields (FurnitureData, FigureData, FigureMap) also take a file on this computer.
+                        let json = matches!(i, 0 | 4 | 5);
+                        ui.horizontal(|ui| {
+                            let width = (ui.available_width() - if json { 104.0 } else { 4.0 }).max(200.0);
+                            let hint = if json { t("https:// or a file on this computer") } else { "https://" };
+                            ui.add(egui::TextEdit::singleline(retro_field(&mut self.edit.urls, i)).hint_text(hint).desired_width(width).margin(egui::vec2(8.0, 6.0)));
+                            if json && ui.add(widgets::secondary_button(t("Choose ..."))).on_hover_text(t("A JSON or XML file on this computer, saved from the browser for example.")).clicked() {
+                                let state = self.state.clone();
+                                shared.spawn(async move {
+                                    let dialog = rfd::AsyncFileDialog::new().add_filter("JSON / XML", &["json", "xml", "txt"]);
+                                    if let Some(file) = dialog.pick_file().await {
+                                        state.lock().unwrap().picked_retro = Some((i, file.path().to_path_buf()));
+                                    }
+                                });
+                            }
+                        });
                         ui.end_row();
                     }
                 });

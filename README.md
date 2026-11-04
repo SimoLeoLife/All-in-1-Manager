@@ -1139,7 +1139,9 @@ FigureData.json, the converter's "disable all sellable" question. The `.hab` fil
 **Nitro retro** (sidebar → ASSETS) downloads a Nitro hotel's own furniture and clothes. Fill in the six values from its
 `renderer-config.json` (`furnidata.url`, `furni.asset.url`, `furni.asset.icon.url`, `avatar.asset.url`,
 `avatar.figuredata.url`, `avatar.figuremap.url`; a folder or the full `.../%libname%.nitro` pattern), give it a
-name and **Save**. Every retro is a **profile**: switch between them with one click, **+ New profile** starts an
+name and **Save**. The three JSON fields also take a file on this computer (**Choose ...**: a FurnitureData.json,
+FigureData.json or FigureMap.json saved from the browser, for example); the bundles then still come from the folder
+links. Every retro is a **profile**: switch between them with one click, **+ New profile** starts an
 empty one, **Delete profile** removes one (its downloaded folder stays). Profiles are kept in Settings, so they are
 there next time (also saved when you press **Download**).
 
@@ -1151,8 +1153,8 @@ there next time (also saved when you press **Download**).
 
 Each profile downloads into `Habbo_Assets/custom/<name>/gamedata` (laid out like gamedata; characters a folder name
 cannot have become `_`), which Deploy Assets does **not** copy: upload
-what you want by hand with the Asset Explorer. A retro serves `.hab`, `.nitro` or `.swf`; the step finds out which
-for each bundle (trying the one that worked last first) and saves every bundle as `.hab`: a `.nitro` is repacked
+what you want by hand with the Asset Explorer. A retro serves `.hab`, `.nitro` or `.swf`: choose it per profile (**Format**), or leave it on **Auto**, which finds
+out per bundle (trying the one that worked last first) and saves every bundle as `.hab`: a `.nitro` is repacked
 with the same files, a `.swf` is converted (furniture, clothes, pets and effects: the All-in-1 converter's SWF
 compilers ported to Rust, the JSON and sprite sheet as it makes them; the sheet stays PNG). A `.swf` that cannot be
 converted is kept in `custom/<name>/source/`; **Convert the kept .swf files** tries those again without downloading. The bundle formats and conversions live in their own crate, `aio-assets`, so other parts of the

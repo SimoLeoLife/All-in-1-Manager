@@ -29,15 +29,66 @@ pub fn folder_url(url: &str) -> String {
     url.trim_end_matches('/').to_string()
 }
 
+impl Downloader<'_> {
+    /// A JSON or XML file of the retro, fresh (see [`fresh`]); when the address with the timestamp fails, the address
+    /// as given is tried once more.
+    async fn fresh_text(&self, url: &str) -> Result<String> {
+        // A file on this computer (saved from the browser, for example) instead of a link.
+        if let Some(path) = local_file(url) {
+            (self.log)(&format!("  reading {}", path.display()));
+            let data = std::fs::read(&path).map_err(|e| error(format!("{}: {e}", path.display())))?;
+            return Ok(String::from_utf8_lossy(data.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&data)).into_owned());
+        }
+        let with_time = fresh(url);
+        match self.text(&with_time).await {
+            Err(_) if with_time != url.trim() => self.text(url.trim()).await,
+            other => other,
+        }
+    }
+}
+
+/// The path when a JSON field holds a file on this computer instead of a link (a plain path or file:///...).
+pub fn local_file(value: &str) -> Option<PathBuf> {
+    let value = value.trim().trim_matches('"');
+    if value.starts_with("http://") || value.starts_with("https://") || value.is_empty() {
+        return None;
+    }
+    let value = value.strip_prefix("file:///").or_else(|| value.strip_prefix("file://")).unwrap_or(value);
+    Some(PathBuf::from(value))
+}
+
+/// Why an answer is not a bundle of `format`: its size, its first bytes, and what the reader says.
+fn rejection(format: Format, data: &[u8]) -> String {
+    let head: Vec<String> = data.iter().take(8).map(|b| format!("{b:02X}")).collect();
+    let reason = match format {
+        Format::Nitro => aio_assets::nitro::read(data).err().map(|e| e.to_string()),
+        Format::Hab => aio_assets::hab::read(data).err().map(|e| e.to_string()),
+        Format::Swf => (!aio_assets::bundle::is_swf(data)).then(|| "no FWS/CWS/ZWS header".to_string()),
+    };
+    let text = if data.first() == Some(&b'<') { " (an HTML page)" } else { "" };
+    format!(
+        "the answer is not a .{} ({} bytes, starts with {}{text}){}",
+        format.extension(),
+        data.len(),
+        head.join(" "),
+        reason.map(|r| format!(": {r}")).unwrap_or_default()
+    )
+}
+
 /// XML (a Flash retro's or Habbo's furnidata, figuredata or figuremap) rather than JSON.
 fn is_xml(text: &str) -> bool {
     text.trim_start_matches('\u{feff}').trim_start().starts_with('<')
 }
 
 /// The URL with a timestamp, so a cache in front of the retro gives the newest file (as the converter does).
+/// An address that has a query already (a "?v=..." version of the retro's own) is used exactly as given: some CDNs
+/// answer 404 to a query they do not know.
 fn fresh(url: &str) -> String {
-    let separator = if url.contains('?') { '&' } else { '?' };
-    format!("{}{separator}t={}", url.trim(), chrono::Utc::now().timestamp())
+    let url = url.trim();
+    if url.contains('?') {
+        return url.to_string();
+    }
+    format!("{url}?t={}", chrono::Utc::now().timestamp())
 }
 
 const ORDER: [Format; 3] = [Format::Hab, Format::Nitro, Format::Swf];
@@ -49,6 +100,8 @@ struct BundleCounts {
     /// .swf files kept in source/ because they could not be converted.
     swf_waiting: AtomicUsize,
     by_format: [AtomicUsize; 3],
+    /// Answers that were not the format asked for (logged for the first few).
+    rejected: AtomicUsize,
 }
 
 impl BundleCounts {
@@ -77,7 +130,7 @@ impl Downloader<'_> {
     /// Bundles named `names` from `base`/<name>.<hab|nitro|swf> into gamedata/`folder`/<name>.hab. With a revision
     /// (from a furnidata XML) `base`/<revision>/<name>.<ext> is tried too, as Habbo's hof_furni serves them. The format
     /// and the path that worked last are tried first, so a retro costs one request per bundle.
-    async fn fetch_bundles(&self, what: &str, base: &str, folder: &str, names: Vec<(String, Option<i64>)>, kind: AssetKind) -> Result<BundleCounts> {
+    async fn fetch_bundles(&self, what: &str, base: &str, folder: &str, names: Vec<(String, Option<i64>)>, kind: AssetKind, only: Option<Format>) -> Result<BundleCounts> {
         let result = BundleCounts::default();
         let preferred = AtomicU8::new(0);
         let plain_first = std::sync::atomic::AtomicBool::new(false);
@@ -98,7 +151,11 @@ impl Downloader<'_> {
                         result.counts.existing.fetch_add(1, Ordering::Relaxed);
                     } else {
                         let first = preferred.load(Ordering::Relaxed) as usize;
-                        let order = [ORDER[first], ORDER[(first + 1) % 3], ORDER[(first + 2) % 3]];
+                        // A format chosen in the profile is the only one tried; Auto tries all three, the last hit first.
+                        let order: Vec<Format> = match only {
+                            Some(format) => vec![format],
+                            None => vec![ORDER[first], ORDER[(first + 1) % 3], ORDER[(first + 2) % 3]],
+                        };
                         let mut stems = vec![name.clone()];
                         if let Some(revision) = revision {
                             let with_revision = format!("{revision}/{name}");
@@ -109,7 +166,7 @@ impl Downloader<'_> {
                             }
                         }
                         let mut found = false;
-                        'formats: for format in order {
+                        'formats: for &format in &order {
                             let mut hit = None;
                             for stem in &stems {
                                 let url = format!("{base}/{stem}.{}", format.extension());
@@ -117,6 +174,10 @@ impl Downloader<'_> {
                                     if aio_assets::detect(&data) == Some(format) {
                                         hit = Some((stem.contains('/'), data));
                                         break;
+                                    }
+                                    // The server answered, but not with this format: say why, for the first few.
+                                    if result.rejected.fetch_add(1, Ordering::Relaxed) < 5 {
+                                        (self.log)(&format!("  ! {stem}.{}: {}", format.extension(), rejection(format, &data)));
                                     }
                                 }
                             }
@@ -154,7 +215,15 @@ impl Downloader<'_> {
                             break;
                         }
                         if !found {
-                            result.counts.missing.fetch_add(1, Ordering::Relaxed);
+                            // For the first few: the address asked for and what the server answered.
+                            if result.counts.missing.fetch_add(1, Ordering::Relaxed) < 3 {
+                                let url = format!("{base}/{}.{}", stems[0], order[0].extension());
+                                let answer = match self.client.get(&url).send().await {
+                                    Ok(response) => format!("{} ({} bytes)", response.status(), response.content_length().map_or("?".into(), |n| n.to_string())),
+                                    Err(e) => format!("no answer: {e}"),
+                                };
+                                (self.log)(&format!("  ! not found: {url} answered {answer}"));
+                            }
                         }
                     }
                     let done = done.fetch_add(1, Ordering::Relaxed) + 1;
@@ -181,7 +250,7 @@ impl Downloader<'_> {
         if urls.furnidata.trim().is_empty() || urls.furniture.trim().is_empty() {
             return Err(error("Fill in FurnitureData.json and the furniture folder of the retro first."));
         }
-        let text = self.text(&fresh(&urls.furnidata)).await?;
+        let text = self.fresh_text(&urls.furnidata).await?;
         // A Nitro retro serves FurnitureData.json; a Flash one (and Habbo) the furnidata XML, with a revision per furni.
         let (json, entries, xml): (Value, Vec<(String, Option<i64>)>, bool) = if is_xml(&text) {
             let json = crate::furniture_language::xml_to_json(&text)?;
@@ -218,7 +287,7 @@ impl Downloader<'_> {
             slot.1 = slot.1.max(*revision);
         }
         let names: Vec<(String, Option<i64>)> = libraries.into_values().collect();
-        let bundles = self.fetch_bundles("furniture", &folder_url(&urls.furniture), "furniture", names, AssetKind::Furniture).await?;
+        let bundles = self.fetch_bundles("furniture", &folder_url(&urls.furniture), "furniture", names, AssetKind::Furniture, Format::from_extension(&urls.format)).await?;
         let from = if xml { " (from the furnidata XML)" } else { "" };
         let mut summary = format!("FurnitureData.json{from} with {} furniture; {}", classnames.len(), bundles.summary("furniture .hab"));
         if !urls.furniture_icons.trim().is_empty() {
@@ -240,7 +309,7 @@ impl Downloader<'_> {
             counts.existing.fetch_sub(found.min(counts.existing.load(Ordering::Relaxed)), Ordering::Relaxed);
             summary += &format!("; {}", counts.summary("icons"));
         }
-        Ok(summary)
+        Ok(summary.replace("not on Habbo", "not found on the retro"))
     }
 
     /// The retro's FigureData.json, FigureMap.json and its clothes (as .hab); hh_human_fx and hh_pets are no clothes.
@@ -248,7 +317,7 @@ impl Downloader<'_> {
         if urls.figuremap.trim().is_empty() || urls.clothes.trim().is_empty() {
             return Err(error("Fill in FigureMap.json and the clothes folder of the retro first."));
         }
-        let mut map = self.text(&fresh(&urls.figuremap)).await?;
+        let mut map = self.fresh_text(&urls.figuremap).await?;
         // A Flash retro serves figuremap.xml and figuredata.xml: they become the JSON Octane loads.
         let json: Value = if is_xml(&map) {
             let (json, _) = convert::figuremap(&map)?;
@@ -272,7 +341,7 @@ impl Downloader<'_> {
         self.save_raw("config/FigureMap.json", &map)?;
         let mut summary = String::new();
         if !urls.figuredata.trim().is_empty() {
-            let mut data = self.text(&fresh(&urls.figuredata)).await?;
+            let mut data = self.fresh_text(&urls.figuredata).await?;
             if is_xml(&data) {
                 data = serde_json::to_string_pretty(&convert::figuredata(&data, false)?).map_err(|e| error(e.to_string()))?;
             } else {
@@ -282,8 +351,8 @@ impl Downloader<'_> {
             summary += "FigureData.json and ";
         }
         let names = names.into_iter().map(|n| (n, None)).collect();
-        let bundles = self.fetch_bundles("clothes", &folder_url(&urls.clothes), "clothes", names, AssetKind::Clothes).await?;
-        Ok(format!("{summary}FigureMap.json; {}", bundles.summary("clothes .hab")))
+        let bundles = self.fetch_bundles("clothes", &folder_url(&urls.clothes), "clothes", names, AssetKind::Clothes, Format::from_extension(&urls.format)).await?;
+        Ok(format!("{summary}FigureMap.json; {}", bundles.summary("clothes .hab")).replace("not on Habbo", "not found on the retro"))
     }
 }
 
@@ -332,4 +401,20 @@ pub fn convert_sources(custom: &std::path::Path, log: crate::server::Log<'_>, ca
         log(&format!("  ! ... and {} more", failed - 10));
     }
     Ok(format!("{converted} .swf converted to .hab, {skipped} already converted, {failed} failed"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_address_with_its_own_version_is_kept() {
+        let url = "https://images.leet.city/leet-asset-bundles/gamedata/leet_furni.json?v=94c2f8f6";
+        assert_eq!(fresh(url), url);
+        assert!(fresh(" https://x/FurnitureData.json ").starts_with("https://x/FurnitureData.json?t="));
+        assert_eq!(folder_url("https://x/libraries/figure/%libname%.nitro?v=3"), "https://x/libraries/figure");
+        assert_eq!(local_file("https://x/a.json"), None);
+        assert_eq!(local_file(r#" "C:\Users\me\leet_furni.json" "#), Some(PathBuf::from(r"C:\Users\me\leet_furni.json")));
+        assert_eq!(local_file("file:///home/me/a.json"), Some(PathBuf::from("home/me/a.json")));
+    }
 }

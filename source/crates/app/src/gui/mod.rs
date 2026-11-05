@@ -50,6 +50,8 @@ pub enum Page {
     DeployAssets,
     ImportAssets,
     ImportCustom,
+    OfferFix,
+    ItemFix,
     GetAssets,
     RetroAssets,
     AssetTools,
@@ -152,6 +154,8 @@ pub(crate) struct Wizards {
     pub(crate) deploy: Wizard,
     pub(crate) import_assets: Wizard,
     pub(crate) import_custom: Wizard,
+    pub(crate) offer_fix: Wizard,
+    pub(crate) item_fix: Wizard,
 }
 
 impl Wizards {
@@ -172,11 +176,13 @@ impl Wizards {
             Page::DeployAssets => &mut self.deploy,
             Page::ImportAssets => &mut self.import_assets,
             Page::ImportCustom => &mut self.import_custom,
+            Page::OfferFix => &mut self.offer_fix,
+            Page::ItemFix => &mut self.item_fix,
             _ => return None,
         })
     }
 
-    fn all(&self) -> [&Wizard; 15] {
+    fn all(&self) -> [&Wizard; 17] {
         [
             &self.install,
             &self.atom,
@@ -193,6 +199,8 @@ impl Wizards {
             &self.deploy,
             &self.import_assets,
             &self.import_custom,
+            &self.offer_fix,
+            &self.item_fix,
         ]
     }
 }
@@ -497,6 +505,14 @@ impl App {
                 t("Import custom furniture").into(),
                 t("A Nitro retro profile's custom furniture merged into Habbo's FurnitureData.json, and into items_base and the catalogue.").into(),
             ),
+            Page::OfferFix => (
+                t("Fix offer IDs").into(),
+                t("catalog_items.offer_id and FurnitureData.json in line, so every furni can be bought.").into(),
+            ),
+            Page::ItemFix => (
+                t("Fix items_base").into(),
+                t("sprite_id, size, sit / lay / walk and interaction modes of the furni in items_base, as FurnitureData.json and the .hab files give them.").into(),
+            ),
             Page::Debug => (
                 "Debug".into(),
                 if session.is_none() {
@@ -607,6 +623,8 @@ impl App {
                                 (t("Deploy Assets"), Icon::ArrowUp, Page::DeployAssets),
                                 (t("Import Assets"), Icon::Database, Page::ImportAssets),
                                 (t("Import custom furniture"), Icon::Cube, Page::ImportCustom),
+                                (t("Fix offer IDs"), Icon::Shopping, Page::OfferFix),
+                                (t("Fix items_base"), Icon::Wrench, Page::ItemFix),
                                 ("Asset Explorer", Icon::FolderSync, Page::AssetExplorer),
                             ],
                         ),
@@ -732,6 +750,8 @@ impl App {
             Page::DeployAssets => &self.wizards.deploy,
             Page::ImportAssets => &self.wizards.import_assets,
             Page::ImportCustom => &self.wizards.import_custom,
+            Page::OfferFix => &self.wizards.offer_fix,
+            Page::ItemFix => &self.wizards.item_fix,
             _ => return None,
         };
         Some(wizard.status()).filter(|s| s != t("Ready."))

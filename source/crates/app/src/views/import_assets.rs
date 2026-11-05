@@ -93,7 +93,7 @@ fn prepare(original: &Value, profile: &str, db: &DbState, assets: &Path) -> Resu
         })?;
         profiles.push((name.clone(), json));
     }
-    let merged = furni_merge::merge_new(original, &profiles, &state);
+    let merged = furni_merge::merge_new(original, &profiles, &state, &db.offer_ids);
     let index = order.iter().position(|p| p == profile).unwrap_or(0);
     let mut plan = furni_import::plan(&merged.reports[index].added, &profile_gamedata(assets, profile).join("furniture"), db);
     // Furni without a catalogue item are the Habbo page's business.
@@ -107,6 +107,14 @@ fn prepare(original: &Value, profile: &str, db: &DbState, assets: &Path) -> Resu
                 if let Some(&(sprite, db_kind)) = db.sprites.get(&name.trim().to_lowercase()) {
                     if db_kind == kind && sprite != id {
                         plan.moved.push(furni_import::Moved { name: name.trim().to_string(), kind, from: sprite, to: id });
+                    }
+                }
+                // Its catalogue items with another offer id than FurnitureData.json now has for it.
+                if let Some(offer) = entry["offerid"].as_i64() {
+                    for &(item, now) in db.catalog.get(&name.trim().to_lowercase()).map(Vec::as_slice).unwrap_or_default() {
+                        if now != offer {
+                            plan.offers.push((item, name.trim().to_string(), now, offer));
+                        }
                     }
                 }
             }
@@ -126,7 +134,9 @@ enum List {
     Already,
     Renumbered,
     Moved,
+    Offers,
     Capped,
+    Multiheight,
     TooLong,
     Pages,
 }
@@ -260,7 +270,14 @@ impl Form {
             (Some(_), List::Already, Some(p)) => names(&p.report().already),
             (Some(_), List::Renumbered, Some(p)) => p.report().renumbered.iter().filter(|r| matches(&r.0)).map(|(name, old, new)| vec![name.clone(), old.to_string(), new.to_string()]).collect(),
             (Some(plan), List::TooLong, _) => names(&plan.too_long),
+            (Some(plan), List::Multiheight, _) => plan
+                .new
+                .iter()
+                .filter(|f| matches(&f.classname))
+                .filter_map(|f| f.multiheight.as_ref().map(|h| vec![f.classname.clone(), f.interaction_type.to_string(), h.clone()]))
+                .collect(),
             (Some(plan), List::Capped, _) => plan.capped.iter().filter(|c| matches(&c.0)).map(|(name, height)| vec![name.clone(), height.to_string(), height.clamp(-furni_import::MAX_STACK_HEIGHT, furni_import::MAX_STACK_HEIGHT).to_string()]).collect(),
+            (Some(plan), List::Offers, _) => plan.offers.iter().filter(|o| matches(&o.1)).map(|(id, name, from, to)| vec![id.to_string(), name.clone(), from.to_string(), to.to_string()]).collect(),
             (Some(plan), List::Moved, _) => plan.moved.iter().filter(|m| matches(&m.name)).map(|m| vec![m.name.clone(), m.from.to_string(), m.to.to_string()]).collect(),
             (Some(_), List::Pages, _) => pages.iter().filter(|(c, _)| matches(c)).map(|(caption, count)| vec![caption.clone(), count.to_string()]).collect(),
             _ => Vec::new(),
@@ -635,6 +652,9 @@ impl InstallStep for ImportAssetsStep {
                     lists.push((List::Duplicates, tf("Listed twice ({count})", &[("count", &r.duplicates.len().to_string())])));
                     lists.push((List::Already, tf("Already there ({count})", &[("count", &r.already.len().to_string())])));
                     lists.push((List::Renumbered, tf("New id ({count})", &[("count", &r.renumbered.len().to_string())])));
+                    if !plan.offers.is_empty() {
+                        lists.push((List::Offers, tf("offer_id to update ({count})", &[("count", &plan.offers.len().to_string())])));
+                    }
                     if !plan.moved.is_empty() {
                         lists.push((List::Moved, tf("sprite_id to update ({count})", &[("count", &plan.moved.len().to_string())])));
                     }
@@ -642,6 +662,10 @@ impl InstallStep for ImportAssetsStep {
             }
             if !plan.capped.is_empty() {
                 lists.push((List::Capped, tf("Height too big ({count})", &[("count", &plan.capped.len().to_string())])));
+            }
+            let multiheight = plan.new.iter().filter(|f| f.multiheight.is_some()).count();
+            if multiheight > 0 {
+                lists.push((List::Multiheight, tf("Multiheight ({count})", &[("count", &multiheight.to_string())])));
             }
             if !plan.too_long.is_empty() {
                 lists.push((List::TooLong, tf("Name too long ({count})", &[("count", &plan.too_long.len().to_string())])));
@@ -687,9 +711,17 @@ impl InstallStep for ImportAssetsStep {
                 widgets::muted(ui, palette, t("Already in items_base, but FurnitureData.json now has them under another id (Habbo took theirs): their sprite_id is updated, so the client keeps showing them."), 12.0);
                 table(ui, palette, "import_moved", &[260.0, 100.0, 100.0], &["item_name", t("Now"), t("New id")], &rows);
             }
+            (List::Offers, _) => {
+                widgets::muted(ui, palette, t("Custom furniture already in the catalogue whose offer id is another one now (Habbo's furni keep theirs, every custom furni gets its own): their catalogue items follow, so they can be bought."), 12.0);
+                table(ui, palette, "import_offers", &[90.0, 260.0, 110.0, 110.0], &["catalog_items.id", "catalog_name", t("offer_id now"), t("New offer_id")], &rows);
+            }
             (List::Capped, _) => {
                 widgets::muted(ui, palette, t("Their .hab file gives a height that items_base.stack_height cannot hold (at most 99.99): they get 99.99 (or -99.99). Check these furni in the hotel."), 12.0);
                 table(ui, palette, "import_capped", &[260.0, 120.0, 120.0], &["item_name", t("In the .hab"), "stack_height"], &rows);
+            }
+            (List::Multiheight, _) => {
+                widgets::muted(ui, palette, t("Their .hab is a multiheight furni (logicType furniture_multiheight): they get interaction_type multiheight and a height per state, worked out from how far each state's image moves (rounded to a quarter, at least 0.10). That is right for blocks, but only a rough guess for stages and stairs: check these heights, and correct them in items_base.multiheight where needed."), 12.0);
+                table(ui, palette, "import_multiheight", &[260.0, 120.0, 300.0], &["item_name", "interaction", "multiheight"], &rows);
             }
             (List::TooLong, _) => {
                 widgets::muted(ui, palette, t("Their classname is longer than items_base.item_name holds (70 characters): they are left out, because a shortened name would no longer match FurnitureData.json."), 12.0);
@@ -823,7 +855,7 @@ impl InstallStep for ImportAssetsStep {
         }
         // Thousands of .hab files on a new hotel: not on the window's thread.
         let plan = tokio::task::spawn_blocking(move || furni_import::plan(&furnidata, &furniture, &state)).await?;
-        let (new, no_bundle) = (plan.new.len(), plan.no_bundle.len());
+        let (new, no_bundle, uncatalogued) = (plan.new.len(), plan.no_bundle.len(), plan.uncatalogued.len());
         {
             let mut form = self.form.lock().unwrap();
             form.database = database.clone();
@@ -834,7 +866,8 @@ impl InstallStep for ImportAssetsStep {
             if no_bundle > 0 { format!(" {}", tf("{count} more are missing but have no .hab file in the download.", &[("count", &no_bundle.to_string())])) } else { String::new() };
         if new == 0 {
             ui.detected(ResultKind::Success, t("Every downloaded Habbo furniture is in the database"), &format!("{now}{skipped}"));
-            return Ok(true);
+            // Done, unless the option for the furniture without a catalogue item has something to do.
+            return Ok(uncatalogued == 0);
         }
         ui.detected(ResultKind::Info, &tf("{count} furniture can be imported", &[("count", &new.to_string())]), &format!("{now}{skipped} {}", t("Check the list below first.")));
         Ok(false)
@@ -877,16 +910,18 @@ impl InstallStep for ImportAssetsStep {
         }
         // A sprite_id that moved meanwhile is not touched (the UPDATE names the one it had).
         plan.moved.retain(|m| state.sprites.get(&m.name.to_lowercase()) == Some(&(m.from, m.kind)));
+        plan.offers.retain(|(id, name, from, _)| state.catalog.get(&name.to_lowercase()).is_some_and(|items| items.contains(&(*id, *from))));
         let extra = if with_uncatalogued { plan.uncatalogued.len() } else { 0 };
         if plan.work(with_uncatalogued) == 0 {
             fail!("There is nothing to import any more.");
         }
         log(&format!(
-            "  {}: {} new furniture, {} catalogue items for furniture without one, {} sprite_ids to update",
+            "  {}: {} new furniture, {} catalogue items for furniture without one, {} sprite_ids and {} offer_ids to update",
             state.database,
             plan.new.len(),
             extra,
-            plan.moved.len()
+            plan.moved.len(),
+            plan.offers.len()
         ));
         ui.done(&state.database);
 

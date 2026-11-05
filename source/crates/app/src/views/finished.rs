@@ -1060,3 +1060,63 @@ pub fn import_assets(imported: super::import_assets::Imported, steps: Steps, sha
         });
     })
 }
+
+/// Fix offer IDs' finish page: what changed, and the way back.
+pub fn offer_fix(updated: usize, generated: usize, safety_backup: Option<String>, furnidata: Option<(std::path::PathBuf, Option<String>)>, steps: Steps) -> Box<dyn FinishPage> {
+    Page::boxed(move |ui, palette| {
+        let ok = clean(&steps);
+        let (kind, heading, message) = if ok {
+            (
+                ResultKind::Success,
+                t("The offer IDs are in line").to_string(),
+                tf("{updates} catalogue items got another offer_id, {generated} furni a new offer id.", &[("updates", &updated.to_string()), ("generated", &generated.to_string())]),
+            )
+        } else {
+            (ResultKind::Warning, t("The offer IDs were not fixed").to_string(), t(RUN_AGAIN).to_string())
+        };
+        widgets::result_banner(ui, palette, kind, &heading, &message);
+        step_list(ui, palette, &steps);
+        if safety_backup.is_none() && furnidata.is_none() {
+            return;
+        }
+        section(ui, t("As it was before"), |ui| {
+            if let Some(backup) = &safety_backup {
+                widgets::text(ui, t("The database before the update (Tools → Import full database puts it back):"), 13.0);
+                code(ui, palette, backup);
+            }
+            if let Some((local, old)) = &furnidata {
+                if let Some(old) = old {
+                    widgets::text(ui, t("The FurnitureData.json that was on the server:"), 13.0);
+                    code(ui, palette, old);
+                }
+                widgets::text(ui, t("The new one, on this computer:"), 13.0);
+                code(ui, palette, &local.display().to_string());
+            }
+        });
+    })
+}
+
+/// Fix items_base's finish page: what changed, and the way back.
+pub fn item_fix(rows: usize, changes: usize, safety_backup: Option<String>, steps: Steps) -> Box<dyn FinishPage> {
+    Page::boxed(move |ui, palette| {
+        let ok = clean(&steps);
+        if ok {
+            widgets::result_banner(
+                ui,
+                palette,
+                ResultKind::Success,
+                t("items_base is in line"),
+                &tf("{rows} furni got {changes} new values. Players see it after they reload the hotel.", &[("rows", &rows.to_string()), ("changes", &changes.to_string())]),
+            );
+        } else {
+            widgets::result_banner(ui, palette, ResultKind::Warning, t("items_base was not fixed"), t(RUN_AGAIN));
+        }
+        step_list(ui, palette, &steps);
+        if let Some(backup) = &safety_backup {
+            section(ui, t("As it was before"), |ui| {
+                widgets::text(ui, t("The database before the update (Tools → Import full database puts it back):"), 13.0);
+                code(ui, palette, backup);
+            });
+        }
+    })
+}

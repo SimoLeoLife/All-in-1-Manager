@@ -16,13 +16,19 @@ const MP3: &[u8] = b"ID3\x04\0\0\0\0\0\0";
 
 /// Serves `files` (path -> body) on 127.0.0.1; anything else is a 404. Returns the base URL.
 async fn serve(files: HashMap<String, Vec<u8>>) -> String {
+    serve_requiring(files, Vec::new()).await
+}
+
+/// As [`serve`], but a request without every one of `required` (lowercase "name: value" header lines) is a 403, as
+/// a CDN that only answers its own hotel does.
+async fn serve_requiring(files: HashMap<String, Vec<u8>>, required: Vec<String>) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
-    let files = Arc::new(files);
+    let (files, required) = (Arc::new(files), Arc::new(required));
     tokio::spawn(async move {
         loop {
             let Ok((mut socket, _)) = listener.accept().await else { return };
-            let files = files.clone();
+            let (files, required) = (files.clone(), required.clone());
             tokio::spawn(async move {
                 let mut request = Vec::new();
                 let mut buffer = [0u8; 4096];
@@ -34,11 +40,15 @@ async fn serve(files: HashMap<String, Vec<u8>>) -> String {
                 }
                 let line = String::from_utf8_lossy(&request);
                 let path = line.split_whitespace().nth(1).unwrap_or("/").split('?').next().unwrap_or("/").to_string();
+                let lower = line.to_lowercase();
+                let allowed = required.iter().all(|h| lower.lines().any(|l| l.trim() == h));
                 let (status, body) = match files.get(&path) {
+                    _ if !allowed => ("403 Forbidden", b"forbidden".to_vec()),
                     Some(body) => ("200 OK", body.clone()),
                     None => ("404 Not Found", b"not found".to_vec()),
                 };
-                let head = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                let challenge = if allowed { "" } else { "cf-mitigated: challenge\r\n" };
+                let head = format!("HTTP/1.1 {status}\r\n{challenge}Content-Length: {}\r\nConnection: close\r\n\r\n", body.len());
                 let _ = socket.write_all(head.as_bytes()).await;
                 let _ = socket.write_all(&body).await;
             });
@@ -120,7 +130,7 @@ async fn every_download_lands_in_the_gamedata_layout() {
     std::fs::create_dir_all(&icons).unwrap();
     std::fs::write(icons.join("fx_icon_5.png"), PNG).unwrap();
     std::fs::write(icons.join("fx_icon_bad.png"), PNG).unwrap();
-    let options = Options { not_sellable: true, effect_icons_source: Some(icons.display().to_string()), also_swf: true };
+    let options = Options { not_sellable: true, effect_icons_source: Some(icons.display().to_string()), also_swf: true, ..Options::default() };
     let lines = Mutex::new(Vec::<String>::new());
     let log = |line: &str| lines.lock().unwrap().push(line.to_string());
     let downloader = Downloader::new(root.path(), urls, options, &log, CancellationToken::new()).unwrap();
@@ -239,7 +249,7 @@ async fn a_retro_in_any_format_ends_up_as_hab() {
         clothes: format!("{base}/gamedata/clothes"),
         figuredata: format!("{base}/gamedata/config/FigureData.json"),
         figuremap: format!("{base}/gamedata/config/FigureMap.json"),
-        format: String::new(),
+        ..Default::default()
     };
     let root = tempfile::tempdir().unwrap();
     let log = |_: &str| {};
@@ -294,7 +304,7 @@ async fn a_flash_retro_with_furnidata_xml() {
         clothes: format!("{base}/gordon/REL"),
         figuredata: format!("{base}/gamedata/figuredata/1"),
         figuremap: format!("{base}/gordon/REL/figuremap.xml"),
-        format: String::new(),
+        ..Default::default()
     };
     let root = tempfile::tempdir().unwrap();
     let log = |_: &str| {};
@@ -350,4 +360,55 @@ async fn a_stopped_run_stops() {
     let downloader = Downloader::new(root.path(), urls, Options::default(), &log, cancel).unwrap();
     assert!(downloader.run(Asset::Texts).await.is_err());
     assert!(!root.path().join("gamedata").exists());
+}
+
+#[tokio::test]
+async fn a_retro_cdn_that_wants_a_referer_and_headers() {
+    let nitro = aio_assets::nitro::write(&[("x.json".to_string(), b"{}".to_vec())]);
+    let mut f: HashMap<String, Vec<u8>> = HashMap::new();
+    f.insert("/config/FurnitureData.json".into(), br#"{"roomitemtypes":{"furnitype":[{"classname":"chair"}]}}"#.to_vec());
+    f.insert("/furniture/chair.nitro".into(), nitro);
+    let base = serve_requiring(f, vec!["referer: https://leet.city/".into(), "user-agent: mybrowser/1.0".into(), "x-token: abc".into()]).await;
+    let mut urls = aio_remote::habbo_assets::retro::RetroUrls {
+        furnidata: format!("{base}/config/FurnitureData.json"),
+        furniture: format!("{base}/furniture"),
+        ..Default::default()
+    };
+    let log = |_: &str| {};
+    let hotel = Urls::habbo(aio_remote::furniture_language::LANGUAGES[0]);
+
+    // Without them the CDN refuses, and the error says it is Cloudflare's bot check.
+    let root = tempfile::tempdir().unwrap();
+    let plain = Downloader::new(root.path(), hotel.clone(), Options::default(), &log, CancellationToken::new()).unwrap();
+    let refused = plain.retro_furniture(&urls).await.unwrap_err().to_string();
+    assert!(refused.contains("403") && refused.contains("Cloudflare") && refused.contains("Download with curl"), "{refused}");
+
+    urls.referer = "https://leet.city/".into();
+    urls.headers = "User-Agent: mybrowser/1.0\nX-Token: abc".into();
+    let options = Options { headers: urls.request_headers().unwrap(), ..Options::default() };
+    let downloader = Downloader::new(root.path(), hotel.clone(), options, &log, CancellationToken::new()).unwrap();
+    let summary = downloader.retro_furniture(&urls).await.unwrap();
+    assert!(summary.contains("1 new furniture .hab"), "{summary}");
+
+    let bad = Options { headers: vec![("Bad Name".into(), "x".into())], ..Options::default() };
+    assert!(Downloader::new(root.path(), hotel.clone(), bad, &log, CancellationToken::new()).is_err());
+
+    // The same through the system's curl (skipped where there is none), 4 at a time.
+    if std::process::Command::new("curl").arg("--version").output().is_err() {
+        return;
+    }
+    let curl_root = tempfile::tempdir().unwrap();
+    let options = Options { headers: urls.request_headers().unwrap(), use_curl: true, parallel: 4, ..Options::default() };
+    let curl = Downloader::new(curl_root.path(), hotel.clone(), options, &log, CancellationToken::new()).unwrap();
+    let summary = curl.retro_furniture(&urls).await.unwrap();
+    assert!(summary.contains("1 new furniture .hab"), "{summary}");
+    assert!(curl_root.path().join("gamedata/furniture/chair.hab").is_file());
+    // curl without the Referer: the bot check is recognised from the response headers as well.
+    let lines = Mutex::new(Vec::<String>::new());
+    let log = |line: &str| lines.lock().unwrap().push(line.to_string());
+    let no_referer = Options { use_curl: true, ..Options::default() };
+    let other_root = tempfile::tempdir().unwrap();
+    let curl = Downloader::new(other_root.path(), hotel, no_referer, &log, CancellationToken::new()).unwrap();
+    assert!(curl.retro_furniture(&urls).await.unwrap_err().to_string().contains("Cloudflare"));
+    assert!(lines.lock().unwrap().iter().any(|l| l.contains("downloading with curl")));
 }

@@ -9,6 +9,7 @@
 //! only for reading here (external_variables as JSON) and is never copied to the server.
 
 pub mod convert;
+mod fetch;
 pub use aio_assets::hab;
 pub mod retro;
 
@@ -159,6 +160,14 @@ pub struct Options {
     /// Furniture, clothes, effects and pets: also the .swf of every library, into the asset tools'
     /// Assets_tools/Original_SWF_Files/<type> (never into gamedata, so never to the server).
     pub also_swf: bool,
+    /// Extra headers sent with every request (a retro profile's Referer and custom headers); a User-Agent here
+    /// replaces the built-in one.
+    pub headers: Vec<(String, String)>,
+    /// Every request through the system's curl instead of the built-in client (for a CDN behind Cloudflare's bot
+    /// check, which holds the built-in client up).
+    pub use_curl: bool,
+    /// Downloads at the same time; 0 is the default (PARALLEL).
+    pub parallel: usize,
 }
 
 /// The asset tools' folder below the assets folder.
@@ -230,10 +239,12 @@ pub struct Downloader<'a> {
     root: PathBuf,
     urls: Urls,
     options: Options,
-    client: reqwest::Client,
+    transport: fetch::Transport,
     log: Log<'a>,
     cancel: CancellationToken,
     release: tokio::sync::OnceCell<String>,
+    /// Answers that were Cloudflare's bot check instead of a file.
+    blocked: AtomicUsize,
 }
 
 fn error(message: impl Into<String>) -> anyhow::Error {
@@ -254,18 +265,40 @@ fn save(path: &Path, data: &[u8]) -> std::io::Result<()> {
 
 impl<'a> Downloader<'a> {
     pub fn new(root: &Path, urls: Urls, options: Options, log: Log<'a>, cancel: CancellationToken) -> Result<Self> {
-        // The headers a browser sends with every request, so a CDN answers the downloader as it answers a browser.
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(reqwest::header::ACCEPT, reqwest::header::HeaderValue::from_static("*/*"));
-        headers.insert(reqwest::header::ACCEPT_LANGUAGE, reqwest::header::HeaderValue::from_static("en-US,en;q=0.9,nl;q=0.8"));
-        let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT)
-            .default_headers(headers)
-            .connect_timeout(Duration::from_secs(20))
-            .timeout(Duration::from_secs(180))
-            .build()
-            .map_err(|e| error(e.to_string()))?;
-        Ok(Self { root: root.to_path_buf(), urls, options, client, log, cancel, release: tokio::sync::OnceCell::new() })
+        let transport = if options.use_curl {
+            let (transport, version) = fetch::Transport::curl(&options.headers).map_err(error)?;
+            log(&format!("  downloading with {version}"));
+            transport
+        } else {
+            fetch::Transport::client(&options.headers).map_err(error)?
+        };
+        Ok(Self { root: root.to_path_buf(), urls, options, transport, log, cancel, release: tokio::sync::OnceCell::new(), blocked: AtomicUsize::new(0) })
+    }
+
+    /// Downloads at the same time.
+    fn parallel(&self) -> usize {
+        if self.options.parallel == 0 { PARALLEL } else { self.options.parallel }
+    }
+
+    /// One GET; an answer from Cloudflare's bot check is counted, and said once in the log.
+    async fn get(&self, url: &str) -> std::result::Result<fetch::Answer, String> {
+        let answer = self.transport.get(url).await?;
+        if answer.challenge && self.blocked.fetch_add(1, Ordering::Relaxed) == 0 {
+            let hint = if self.options.use_curl { "" } else { " Turn on \"Download with curl\" in the profile." };
+            (self.log)(&format!("  ! {url}: blocked by Cloudflare's bot check ({}).{hint}", answer.status));
+        }
+        Ok(answer)
+    }
+
+    /// For a summary: how many answers were Cloudflare's bot check, if any.
+    fn blocked_note(&self) -> String {
+        match self.blocked.load(Ordering::Relaxed) {
+            0 => String::new(),
+            n => {
+                let hint = if self.options.use_curl { "" } else { ", turn on \"Download with curl\"" };
+                format!("; {n} requests blocked by Cloudflare's bot check{hint}")
+            }
+        }
     }
 
     fn path(&self, below_gamedata: &str) -> PathBuf {
@@ -288,25 +321,27 @@ impl<'a> Downloader<'a> {
 
     async fn text(&self, url: &str) -> Result<String> {
         self.stopped()?;
-        let response = self.client.get(url).send().await.map_err(|e| error(format!("Could not download {url}: {e}")))?;
-        if !response.status().is_success() {
-            return Err(error(format!("{url} answered {}", response.status())));
+        let answer = self.get(url).await.map_err(|e| error(format!("Could not download {url}: {e}")))?;
+        if answer.challenge {
+            let hint = if self.options.use_curl { "" } else { " Turn on \"Download with curl\" in the profile." };
+            return Err(error(format!("{url} answered {}: blocked by Cloudflare's bot check.{hint}", answer.status)));
         }
-        response.text().await.map_err(|e| error(format!("Could not download {url}: {e}")))
+        if !answer.is_success() {
+            return Err(error(format!("{url} answered {}", answer.status)));
+        }
+        Ok(String::from_utf8_lossy(&answer.body).into_owned())
     }
 
     /// The body of a successful answer; None for a missing file. A network error is retried once.
     async fn bytes(&self, url: &str) -> std::result::Result<Option<Vec<u8>>, String> {
         let mut last = String::new();
         for _ in 0..2 {
-            match self.client.get(url).send().await {
-                Ok(response) if response.status().is_success() => match response.bytes().await {
-                    Ok(body) => return Ok(Some(body.to_vec())),
-                    Err(e) => last = e.to_string(),
-                },
-                Ok(response) if response.status().is_client_error() => return Ok(None),
-                Ok(response) => last = response.status().to_string(),
-                Err(e) => last = e.to_string(),
+            match self.get(url).await {
+                Ok(answer) if answer.is_success() => return Ok(Some(answer.body)),
+                Ok(answer) if answer.challenge => return Err(format!("{} (blocked by Cloudflare's bot check)", answer.status)),
+                Ok(answer) if (400..500).contains(&answer.status) => return Ok(None),
+                Ok(answer) => last = answer.status.to_string(),
+                Err(e) => last = e,
             }
         }
         Err(last)
@@ -379,7 +414,7 @@ impl<'a> Downloader<'a> {
                     }
                 }
             })
-            .buffer_unordered(PARALLEL)
+            .buffer_unordered(self.parallel())
             .collect::<Vec<()>>()
             .await;
         let errors = errors.into_inner().unwrap();

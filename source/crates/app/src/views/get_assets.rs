@@ -77,6 +77,25 @@ const RETRO_FIELDS: [(&str, &str); 6] = [
     ("FigureMap.json", "avatar.figuremap.url"),
 ];
 
+/// What the Referer, Custom headers and Connection fields of a retro profile do (shown below each).
+const REFERER_HELP: &str = n(
+    "Tells the server which website the request comes from. Some hotels only hand out their files to their own website: fill in the hotel's address then. Empty (default): no Referer is sent.",
+);
+const HEADERS_HELP: &str = n(
+    "Extra headers sent with every request, one \"Name: value\" per line. A User-Agent here replaces the built-in one (a recent Edge on Windows); Origin says which website asks. Empty (default): the built-in headers are used.",
+);
+const CONNECTION_HELP: &str = n(
+    "Off (default): the built-in downloader. On: every file is downloaded with curl on this computer; Cloudflare's bot check often lets curl through where the built-in downloader is blocked. At once: how many files are downloaded at the same time; fewer is slower but less likely to be blocked.",
+);
+
+/// A placeholder of a field the user can fill in: italic, 80 % the text colour and 20 % grey (black and grey in the
+/// light theme), so an example reads as an example and not as something filled in.
+fn example(text: impl Into<String>, palette: &Palette) -> RichText {
+    let (a, b) = (palette.text, palette.subtle);
+    let mix = |x: u8, y: u8| ((x as f32) * 0.8 + (y as f32) * 0.2).round() as u8;
+    RichText::new(text).italics().color(egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b())))
+}
+
 fn retro_field(urls: &mut RetroUrls, index: usize) -> &mut String {
     match index {
         0 => &mut urls.furnidata,
@@ -270,10 +289,19 @@ impl GetAssetsView {
         let root = if retro_run { retro::custom_folder(&self.folder, &self.edit) } else { self.folder.clone() };
         self.state.lock().unwrap().last_root = root.clone();
         let retro_urls = self.edit.urls.clone();
+        // The profile's Referer and custom headers, for a retro run only (Habbo's CDN needs none).
+        let headers = if retro_run { retro_urls.request_headers() } else { Ok(Vec::new()) };
+        let (headers, header_error) = match headers {
+            Ok(headers) => (headers, None),
+            Err(e) => (Vec::new(), Some(e)),
+        };
         let options = Options {
             not_sellable: self.not_sellable,
             effect_icons_source: Some(self.icon_source.trim().to_string()).filter(|s| !s.is_empty()),
             also_swf: self.also_swf,
+            headers,
+            use_curl: retro_run && retro_urls.use_curl,
+            parallel: if retro_run { retro_urls.parallel as usize } else { 0 },
         };
         let (state, task_shared) = (self.state.clone(), shared.clone());
         shared.set_status(t("Getting the assets ..."));
@@ -286,7 +314,14 @@ impl GetAssetsView {
             };
             let from = if retro_run { retro::folder_url(&retro_urls.furnidata) } else { hotel.domain.to_string() };
             log(&format!("> {from} → {}", habbo_assets::gamedata_folder(&root).display()));
-            let result = Downloader::new(&root, Urls::habbo(hotel), options, &log, cancel.clone());
+            if !options.headers.is_empty() {
+                let names: Vec<&str> = options.headers.iter().map(|(name, _)| name.as_str()).collect();
+                log(&format!("  with the headers {}", names.join(", ")));
+            }
+            let result = match header_error {
+                Some(e) => Err(anyhow::anyhow!(e)),
+                None => Downloader::new(&root, Urls::habbo(hotel), options, &log, cancel.clone()),
+            };
             match result {
                 Err(e) => state.lock().unwrap().results.push((t("Habbo assets").into(), Err(e.to_string()))),
                 Ok(downloader) => {
@@ -403,7 +438,7 @@ impl GetAssetsView {
                     });
                     let width = (ui.available_width() - 4.0).max(240.0);
                     let hint = self.edit.urls.host().unwrap_or_else(|| t("For example the hotel's name").into());
-                    ui.add(egui::TextEdit::singleline(&mut self.edit.name).hint_text(hint).desired_width(width).margin(egui::vec2(8.0, 6.0)));
+                    ui.add(egui::TextEdit::singleline(&mut self.edit.name).hint_text(example(hint, palette)).desired_width(width).margin(egui::vec2(8.0, 6.0)));
                     ui.end_row();
                     ui.vertical(|ui| {
                         ui.set_min_width(230.0);
@@ -415,6 +450,58 @@ impl GetAssetsView {
                         for (value, label) in [("", t("Auto (try all)")), ("hab", ".hab"), ("nitro", ".nitro"), ("swf", ".swf")] {
                             ui.radio_value(&mut self.edit.urls.format, value.to_string(), label);
                         }
+                    });
+                    ui.end_row();
+                    ui.vertical(|ui| {
+                        ui.set_min_width(230.0);
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.label(RichText::new("Referer").size(13.0).strong());
+                        ui.label(RichText::new(t("sent with every request (optional)")).size(11.0).color(palette.subtle));
+                    });
+                    // The examples are hints only: an empty field means the default.
+                    ui.vertical(|ui| {
+                        let width = (ui.available_width() - 4.0).max(240.0);
+                        ui.add(egui::TextEdit::singleline(&mut self.edit.urls.referer).hint_text(example("https://example.com/", palette)).desired_width(width).margin(egui::vec2(8.0, 6.0)));
+                        ui.label(RichText::new(t(REFERER_HELP)).size(11.5).color(palette.muted));
+                    });
+                    ui.end_row();
+                    ui.vertical(|ui| {
+                        ui.set_min_width(230.0);
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.label(RichText::new(t("Custom headers")).size(13.0).strong());
+                        ui.label(RichText::new(t("one \"Name: value\" per line (optional)")).size(11.0).color(palette.subtle));
+                    });
+                    ui.vertical(|ui| {
+                        let width = (ui.available_width() - 4.0).max(240.0);
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.edit.urls.headers)
+                                .hint_text(example(format!("User-Agent:{}\nOrigin:https://example.com/", furniture_language::USER_AGENT), palette))
+                                .desired_rows(4)
+                                .desired_width(width)
+                                .margin(egui::vec2(8.0, 6.0)),
+                        );
+                        if let Err(e) = self.edit.urls.request_headers() {
+                            ui.label(RichText::new(e).size(11.5).color(palette.warning_text));
+                        }
+                        ui.label(RichText::new(t(HEADERS_HELP)).size(11.5).color(palette.muted));
+                    });
+                    ui.end_row();
+                    ui.vertical(|ui| {
+                        ui.set_min_width(230.0);
+                        ui.spacing_mut().item_spacing.y = 1.0;
+                        ui.label(RichText::new(t("Connection")).size(13.0).strong());
+                        ui.label(RichText::new(t("for a retro behind Cloudflare")).size(11.0).color(palette.subtle));
+                    });
+                    ui.vertical(|ui| {
+                        ui.checkbox(&mut self.edit.urls.use_curl, RichText::new(t("Download with curl")).size(13.0))
+                            .on_hover_text(t("Every request through the system's curl (curl.exe on Windows 10 and later). Cloudflare's bot check often lets curl through where the built-in downloader is blocked."));
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(t("At once:")).size(12.5).color(palette.muted));
+                            for (value, label) in [(0u8, "16"), (8, "8"), (4, "4"), (1, "1")] {
+                                ui.radio_value(&mut self.edit.urls.parallel, value, label);
+                            }
+                        });
+                        ui.label(RichText::new(t(CONNECTION_HELP)).size(11.5).color(palette.muted));
                     });
                     ui.end_row();
                     for (i, (label, key)) in RETRO_FIELDS.iter().enumerate() {
@@ -429,7 +516,7 @@ impl GetAssetsView {
                         ui.horizontal(|ui| {
                             let width = (ui.available_width() - if json { 104.0 } else { 4.0 }).max(200.0);
                             let hint = if json { t("https:// or a file on this computer") } else { "https://" };
-                            ui.add(egui::TextEdit::singleline(retro_field(&mut self.edit.urls, i)).hint_text(hint).desired_width(width).margin(egui::vec2(8.0, 6.0)));
+                            ui.add(egui::TextEdit::singleline(retro_field(&mut self.edit.urls, i)).hint_text(example(hint, palette)).desired_width(width).margin(egui::vec2(8.0, 6.0)));
                             if json && ui.add(widgets::secondary_button(t("Choose ..."))).on_hover_text(t("A JSON or XML file on this computer, saved from the browser for example.")).clicked() {
                                 let state = self.state.clone();
                                 shared.spawn(async move {

@@ -118,6 +118,8 @@ pub struct DbState {
     /// Floor and wall furni of items_base that no catalogue item sells (pets "a0 ..." and the like left out).
     pub uncatalogued: Vec<Uncatalogued>,
     pub items_base: usize,
+    /// The sprite_id and type of every items_base row, by item_name in lower case (the first row of a name).
+    pub sprites: HashMap<String, (i64, char)>,
     pub catalog_items: usize,
     /// The catalogue pages by id, with their caption (for choosing the new page's parent).
     pub pages: BTreeMap<i64, String>,
@@ -130,9 +132,44 @@ pub struct Plan {
     /// Furnidata classnames the database lacks but whose bundle is not in the furniture folder (or unreadable).
     pub no_bundle: Vec<String>,
     pub uncatalogued: Vec<Uncatalogued>,
+    /// Furni in items_base whose sprite_id has to follow FurnitureData.json (a custom furni got another id).
+    pub moved: Vec<Moved>,
+    /// Furni whose bundle height does not fit items_base.stack_height (double(4,2)): (classname, its height); they
+    /// get the nearest height that fits.
+    pub capped: Vec<(String, f64)>,
+    /// Classnames longer than items_base.item_name holds (varchar(70)): left out, cut they would not match
+    /// FurnitureData.json.
+    pub too_long: Vec<String>,
+}
+
+/// items_base.item_name is a varchar(70), public_name a varchar(56).
+pub const MAX_ITEM_NAME: usize = 70;
+pub const MAX_PUBLIC_NAME: usize = 56;
+
+/// An id that fits the int(11) columns (sprite_id, offer_id).
+fn fits_int(id: i64) -> bool {
+    (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&id)
+}
+
+/// The highest stack_height items_base can hold: it is a double(4,2).
+pub const MAX_STACK_HEIGHT: f64 = 99.99;
+
+/// An items_base furni whose sprite_id changes: its FurnitureData.json id moved.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Moved {
+    pub name: String,
+    /// 's' (floor) or 'i' (wall).
+    pub kind: char,
+    pub from: i64,
+    pub to: i64,
 }
 
 impl Plan {
+    /// Something to do: new furni, catalogue items, or sprite ids to follow.
+    pub fn work(&self, with_uncatalogued: bool) -> usize {
+        self.new.len() + self.moved.len() + if with_uncatalogued { self.uncatalogued.len() } else { 0 }
+    }
+
     pub fn floor(&self) -> usize {
         self.new.iter().filter(|f| f.kind == 's').count()
     }
@@ -185,6 +222,10 @@ pub fn plan_with(furnidata: &Value, db: &DbState, read: &(dyn Fn(&str) -> Option
     let mut plan = Plan { uncatalogued, ..Plan::default() };
     for (entry, kind) in wanted {
         let classname = entry["classname"].as_str().unwrap_or("").trim().to_string();
+        if classname.chars().count() > MAX_ITEM_NAME {
+            plan.too_long.push(classname);
+            continue;
+        }
         let Some(bundle) = bundles.get(&bundle_name(&classname).to_lowercase()).copied().flatten() else {
             plan.no_bundle.push(classname);
             continue;
@@ -192,10 +233,15 @@ pub fn plan_with(furnidata: &Value, db: &DbState, read: &(dyn Fn(&str) -> Option
         let (allow_sit, allow_lay, allow_walk) = (flag(entry, "cansiton"), flag(entry, "canlayon"), flag(entry, "canstandon"));
         // Stackable: a height other than 1.0 and nothing to sit or lie on (worked out before a wall item's reset).
         let allow_stack = bundle.height != 1.0 && !allow_sit && !allow_lay;
-        let (width, length, height) = if kind == 'i' { (1.0, 1.0, 0.0) } else { (bundle.width, bundle.length, bundle.height) };
+        let (width, length, mut height) = if kind == 'i' { (1.0, 1.0, 0.0) } else { (bundle.width, bundle.length, bundle.height) };
+        // A retro's bundle can have a height items_base cannot hold (MariaDB refuses the whole import then).
+        if !(-MAX_STACK_HEIGHT..=MAX_STACK_HEIGHT).contains(&height) {
+            plan.capped.push((classname.clone(), height));
+            height = height.clamp(-MAX_STACK_HEIGHT, MAX_STACK_HEIGHT);
+        }
         plan.new.push(NewFurni {
-            sprite_id: entry.get("id").and_then(Value::as_i64),
-            offer_id: entry.get("offerid").and_then(Value::as_i64).unwrap_or(-1),
+            sprite_id: entry.get("id").and_then(Value::as_i64).filter(|id| fits_int(*id)),
+            offer_id: entry.get("offerid").and_then(Value::as_i64).filter(|id| fits_int(*id)).unwrap_or(-1),
             kind,
             width,
             length,
@@ -250,9 +296,12 @@ const CATALOG_ITEMS_COLUMNS: &str = "(`id`, `item_ids`, `page_id`, `offer_id`, `
 /// The items_base row of a new furni, with `id` the SQL expression of its new id. (ProcessNitroFile's INSERT)
 pub fn items_base_values(furni: &NewFurni, id: &str) -> String {
     let name = sql_literal(&furni.classname);
+    // public_name holds less than item_name: only what is shown is cut.
+    let public: String = furni.classname.chars().take(MAX_PUBLIC_NAME).collect();
+    let public = sql_literal(&public);
     let sprite = furni.sprite_id.map_or_else(|| id.to_string(), |s| s.to_string());
     format!(
-        "({id}, {sprite}, {name}, {name}, {}, {}, {}, {}, {}, {}, {}, '1', '1', '0', '1', '1', '{}', '{}', {}, '0', '0', '0', 0, 0, '0')",
+        "({id}, {sprite}, {name}, {public}, {}, {}, {}, {}, {}, {}, {}, '1', '1', '0', '1', '1', '{}', '{}', {}, '0', '0', '0', 0, 0, '0')",
         number(furni.width),
         number(furni.length),
         number(furni.height),
@@ -282,13 +331,70 @@ pub fn page_caption(date: chrono::NaiveDate) -> String {
     format!("import_{}", date.format("%Y%m%d"))
 }
 
-/// The import as one transaction: the page, then the new items_base rows with their catalogue items, and (with
-/// `with_uncatalogued`) a catalogue item for every items_base row that has none. The new ids follow the highest ones
-/// in the tables, so nothing the hotel has is overwritten.
-/// `parent_id` is the page the new page goes under (-1: at the top of the catalogue).
-pub fn sql(plan: &Plan, caption: &str, parent_id: i64, visible: bool, with_uncatalogued: bool) -> String {
+/// The name group of a classname: the part before the first '_' or '*', in lower case ("adobe_kaars2" -> "adobe",
+/// "rare_dragonlamp*4" -> "rare", "duck" -> "duck"). Furni of one group stay on one catalogue page where they fit.
+pub fn name_group(classname: &str) -> String {
+    let name = classname.trim().to_lowercase();
+    let group = name.split(['_', '*']).next().unwrap_or("").to_string();
+    if group.is_empty() { name } else { group }
+}
+
+/// The furni (by name) on catalogue pages of at most `per_page`, as (caption, indexes into `names`): sorted by name,
+/// a name group never split over pages when it fits on one. A group bigger than a page gets pages of its own,
+/// "<group>-1", "<group>-2" ...; small groups share a page, named after its first and last group ("bath - bed").
+pub fn pages(names: &[&str], per_page: usize) -> Vec<(String, Vec<usize>)> {
+    let per_page = per_page.max(1);
+    let mut order: Vec<usize> = (0..names.len()).collect();
+    // Each key made once: 26 000 names sorted with keys made per comparison took long enough to notice.
+    order.sort_by_cached_key(|&i| (name_group(names[i]), names[i].to_lowercase()));
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    for i in order {
+        let group = name_group(names[i]);
+        match groups.last_mut() {
+            Some((name, items)) if *name == group => items.push(i),
+            _ => groups.push((group, vec![i])),
+        }
+    }
+    let mut pages: Vec<(String, Vec<usize>)> = Vec::new();
+    // The page being filled: its first and last group, and its furni.
+    let mut current: Option<(String, String, Vec<usize>)> = None;
+    let flush = |current: &mut Option<(String, String, Vec<usize>)>, pages: &mut Vec<(String, Vec<usize>)>| {
+        if let Some((first, last, items)) = current.take() {
+            let caption = if first == last { first } else { format!("{first} - {last}") };
+            pages.push((caption, items));
+        }
+    };
+    for (group, items) in groups {
+        if items.len() > per_page {
+            flush(&mut current, &mut pages);
+            for (n, chunk) in items.chunks(per_page).enumerate() {
+                pages.push((format!("{group}-{}", n + 1), chunk.to_vec()));
+            }
+            continue;
+        }
+        if current.as_ref().is_some_and(|(_, _, have)| have.len() + items.len() > per_page) {
+            flush(&mut current, &mut pages);
+        }
+        match &mut current {
+            Some((_, last, have)) => {
+                *last = group;
+                have.extend(items);
+            }
+            None => current = Some((group.clone(), group, items)),
+        }
+    }
+    flush(&mut current, &mut pages);
+    pages
+}
+
+/// The import as one transaction: the new items_base rows, then their catalogue items (and, with
+/// `with_uncatalogued`, one for every items_base row that has none). Up to `per_page` they go on one new page
+/// `caption` under `parent_id` (-1: the top of the catalogue); more go on pages of at most `per_page` ([`pages`])
+/// under a new page `caption`. The new ids follow the highest ones in the tables, so nothing the hotel has is
+/// overwritten.
+pub fn sql(plan: &Plan, caption: &str, parent_id: i64, visible: bool, with_uncatalogued: bool, per_page: usize) -> String {
     let mut out = String::new();
-    out.push_str("-- Import Assets (All-in-1 Installer): Habbo furniture the database did not have.\n");
+    out.push_str("-- Import Assets (All-in-1 Installer): furniture the database did not have.\n");
     out.push_str(&format!(
         "-- {} new furniture ({} floor, {} wall), {} catalogue items for furniture without one.\n",
         plan.new.len(),
@@ -297,12 +403,25 @@ pub fn sql(plan: &Plan, caption: &str, parent_id: i64, visible: bool, with_uncat
         if with_uncatalogued { plan.uncatalogued.len() } else { 0 }
     ));
     out.push_str("SET NAMES utf8mb4;\nSTART TRANSACTION;\n");
-    out.push_str(&format!(
-        "INSERT INTO `catalog_pages` (`parent_id`, `page_layout`, `caption_save`, `caption`, `icon_color`, `icon_image`, `min_rank`, `order_num`, `visible`, `enabled`) VALUES ({parent_id}, 'default_3x3', {c}, {c}, 1, 1, 1, 99, {}, '1');\n",
-        yes(visible),
-        c = sql_literal(caption)
-    ));
-    out.push_str("SET @page = LAST_INSERT_ID();\n");
+    // FurnitureData.json moved these furni to another id: items_base follows, or the client shows other furniture.
+    for moved in &plan.moved {
+        out.push_str(&format!(
+            "UPDATE `items_base` SET `sprite_id` = {} WHERE `item_name` = {} AND `type` = '{}' AND `sprite_id` = {};\n",
+            moved.to,
+            sql_literal(&moved.name),
+            moved.kind,
+            moved.from
+        ));
+    }
+    // Every catalogue item: (name, the SQL of its items_base id, offer id).
+    let mut items: Vec<(&str, String, i64)> = plan.new.iter().enumerate().map(|(i, f)| (f.classname.as_str(), new_id("@item", i + 1), f.offer_id)).collect();
+    if with_uncatalogued {
+        items.extend(plan.uncatalogued.iter().map(|u| (u.name.as_str(), u.id.to_string(), u.offer_id)));
+    }
+    if items.is_empty() {
+        out.push_str("COMMIT;\n");
+        return out;
+    }
     out.push_str("SELECT COALESCE(MAX(`id`), 0) INTO @item FROM `items_base`;\n");
     out.push_str("SELECT COALESCE(MAX(`id`), 0) INTO @offer FROM `catalog_items`;\n");
     // In batches, so one statement stays small.
@@ -310,25 +429,39 @@ pub fn sql(plan: &Plan, caption: &str, parent_id: i64, visible: bool, with_uncat
         let start = batch * 500;
         let rows: Vec<String> = furni.iter().enumerate().map(|(i, f)| items_base_values(f, &new_id("@item", start + i + 1))).collect();
         out.push_str(&format!("INSERT INTO `items_base` {ITEMS_BASE_COLUMNS} VALUES\n{};\n", rows.join(",\n")));
-        let rows: Vec<String> = furni
-            .iter()
-            .enumerate()
-            .map(|(i, f)| catalog_item_values(&new_id("@offer", start + i + 1), &new_id("@item", start + i + 1), f.offer_id, &f.classname))
-            .collect();
-        out.push_str(&format!("INSERT INTO `catalog_items` {CATALOG_ITEMS_COLUMNS} VALUES\n{};\n", rows.join(",\n")));
     }
-    if with_uncatalogued {
-        let offset = plan.new.len();
-        for (batch, rows) in plan.uncatalogued.chunks(500).enumerate() {
-            let values: Vec<String> = rows
+    let page = |out: &mut String, parent: &str, caption: &str, order: usize, visible: bool| {
+        out.push_str(&format!(
+            "INSERT INTO `catalog_pages` (`parent_id`, `page_layout`, `caption_save`, `caption`, `icon_color`, `icon_image`, `min_rank`, `order_num`, `visible`, `enabled`) VALUES ({parent}, 'default_3x3', {c}, {c}, 1, 1, 1, {order}, {}, '1');\n",
+            yes(visible),
+            c = sql_literal(caption)
+        ));
+        out.push_str("SET @page = LAST_INSERT_ID();\n");
+    };
+    let names: Vec<&str> = items.iter().map(|i| i.0).collect();
+    let groups = if items.len() <= per_page.max(1) { vec![(caption.to_string(), (0..items.len()).collect())] } else { pages(&names, per_page) };
+    let mut offer = 0;
+    // The page `caption`: the catalogue items' page, or with more pages the folder above them (visible, so the
+    // folder alone decides whether players see them).
+    page(&mut out, &parent_id.to_string(), caption, 99, visible);
+    out.push_str("SET @top = @page;\n");
+    for (n, (title, indexes)) in groups.iter().enumerate() {
+        if groups.len() > 1 {
+            page(&mut out, "@top", title, n + 1, true);
+        }
+        for chunk in indexes.chunks(500) {
+            let rows: Vec<String> = chunk
                 .iter()
-                .enumerate()
-                .map(|(i, row)| catalog_item_values(&new_id("@offer", offset + batch * 500 + i + 1), &row.id.to_string(), row.offer_id, &row.name))
+                .map(|&i| {
+                    offer += 1;
+                    let (name, item, offer_id) = &items[i];
+                    catalog_item_values(&new_id("@offer", offer), item, *offer_id, name)
+                })
                 .collect();
-            out.push_str(&format!("INSERT INTO `catalog_items` {CATALOG_ITEMS_COLUMNS} VALUES\n{};\n", values.join(",\n")));
+            out.push_str(&format!("INSERT INTO `catalog_items` {CATALOG_ITEMS_COLUMNS} VALUES\n{};\n", rows.join(",\n")));
         }
     }
-    out.push_str("SELECT CONCAT('PAGE=', @page);\nCOMMIT;\n");
+    out.push_str(&format!("SELECT CONCAT('PAGE=', @top);\nSELECT 'PAGES={}';\nCOMMIT;\n", groups.len()));
     out
 }
 
@@ -362,6 +495,9 @@ pub fn parse_state(output: &str) -> DbState {
             ["B", id, sprite, kind, name] => {
                 state.items_base += 1;
                 state.names.insert(name.trim().to_lowercase());
+                if let (Ok(sprite), Some(kind)) = (sprite.parse::<i64>(), kind.chars().next()) {
+                    state.sprites.entry(name.trim().to_lowercase()).or_insert((sprite, kind));
+                }
                 // Floor and wall furni only; pets ("a0 pet0") and the like have no furni of their own. (HabFurniScan)
                 if let (Ok(id), true) = (id.parse::<i64>(), matches!(*kind, "s" | "i") && !name.starts_with("a0")) {
                     furni.push((id, name.to_string(), sprite.parse().unwrap_or(0)));
@@ -415,7 +551,10 @@ fn offer_ids(furnidata: &Value) -> BTreeMap<String, i64> {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ImportResult {
     pub safety_backup: String,
+    /// The new page (with more pages: the folder above them), 0 without one.
     pub page_id: i64,
+    /// The pages the catalogue items went on.
+    pub pages: i64,
 }
 
 const IMPORT: &str = r#"{{DatabaseName}}
@@ -430,14 +569,118 @@ if ! mariadb -N "$db" < "$sql" > "$out" 2>&1; then
   { grep -E '^ERROR' "$out" || tail -n 3 "$out"; } | head -n 5 | cut -c1-300 | sed 's/^/  /'
   fail "The import failed (see above): nothing was changed, it ran as one transaction."
 fi
-grep -E '^PAGE=' "$out" || true"#;
+grep -E '^PAGES?=' "$out" || true"#;
 
 /// Runs the uploaded SQL of [`sql`] on the hotel database, after a safety backup of it.
 pub async fn import(server: &dyn Server, remote_sql: &str, log: Log<'_>) -> Result<ImportResult> {
     let backup = server_tools::backup_database(server, log).await?;
     let body = fill(IMPORT, &[("DatabaseName", &server_tools::database_name()), ("SqlFile", &crate::server::shell_quote(remote_sql))]);
-    let values = script::run_capturing(server, &script::with_prelude(&body), log, "Importing the furniture failed", &["PAGE"], None).await?;
-    Ok(ImportResult { safety_backup: backup.remote_path, page_id: values.long("PAGE") })
+    let values = script::run_capturing(server, &script::with_prelude(&body), log, "Importing the furniture failed", &["PAGE", "PAGES"], None).await?;
+    Ok(ImportResult { safety_backup: backup.remote_path, page_id: values.long("PAGE"), pages: values.long("PAGES") })
+}
+
+const PUT_FURNITURE_DATA: &str = r#"set -o pipefail
+json={{JsonFile}}
+trap 'rm -f "$json"' EXIT
+[ -s "$json" ] || fail "The uploaded FurnitureData.json is missing or empty."
+gamedata={{Gamedata}}
+config="$gamedata/config"
+[ -d "$gamedata" ] || fail "$gamedata does not exist: run the Octane step first."
+install -d -o www-data -g www-data -m 2775 "$config"
+if [ -f "$config/FurnitureData.json" ]; then
+  old="$config/FurnitureData.json.bak-$(date +%Y%m%d-%H%M%S)"
+  cp -p "$config/FurnitureData.json" "$old"
+  echo "  The old one is kept as $old"
+  echo "OLD=$old"
+fi
+install -o www-data -g www-data -m 664 "$json" "$config/FurnitureData.json"
+echo "  $config/FurnitureData.json ($(du -h "$config/FurnitureData.json" | cut -f1))""#;
+
+/// Puts the uploaded `remote_json` in gamedata/config as FurnitureData.json; the one that was there is kept next to
+/// it as .bak-<time> (returned).
+pub async fn put_furniture_data(server: &dyn Server, remote_json: &str, log: Log<'_>) -> Result<Option<String>> {
+    log("> FurnitureData.json to the server");
+    let body = fill(
+        PUT_FURNITURE_DATA,
+        &[("Gamedata", &crate::server::shell_quote(&crate::octane::gamedata())), ("JsonFile", &crate::server::shell_quote(remote_json))],
+    );
+    let values = script::run_capturing(server, &script::with_prelude(&body), log, "Putting FurnitureData.json on the server failed", &["OLD"], None).await?;
+    Ok(values.string("OLD"))
+}
+
+/// A file the client needs for an imported furni: where it is here, and where it goes below gamedata.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientFile {
+    pub local: std::path::PathBuf,
+    /// "furniture" (the .hab bundle) or "icons" (<classname>_icon.png).
+    pub folder: &'static str,
+    pub name: String,
+    pub size: u64,
+}
+
+/// The .hab bundles and icons of `furni` that are in `gamedata` (a downloaded gamedata folder): one bundle per base
+/// name, one icon per colour ("rare_dragonlamp*4" -> rare_dragonlamp_4_icon.png).
+pub fn client_files(furni: &[NewFurni], gamedata: &Path) -> Vec<ClientFile> {
+    let mut seen = HashSet::new();
+    let mut files = Vec::new();
+    let mut add = |folder: &'static str, name: String| {
+        let dir = gamedata.join(folder);
+        let found = [name.clone(), name.to_lowercase()].into_iter().map(|n| (dir.join(&n), n)).find(|(path, _)| path.is_file());
+        if let Some((local, name)) = found {
+            if seen.insert((folder, name.to_lowercase())) {
+                let size = std::fs::metadata(&local).map(|m| m.len()).unwrap_or(0);
+                files.push(ClientFile { local, folder, name, size });
+            }
+        }
+    };
+    for f in furni {
+        add("furniture", format!("{}.hab", bundle_name(&f.classname)));
+        add("icons", format!("{}_icon.png", f.classname.trim().replace('*', "_")));
+    }
+    files
+}
+
+const LIST_CLIENT_FILES: &str = r#"g={{Gamedata}}
+for folder in furniture icons; do
+  [ -d "$g/$folder" ] && find "$g/$folder" -maxdepth 1 -type f -printf "$folder/%f\n"
+done
+true"#;
+
+/// The `files` the server's gamedata does not have yet. Names count exactly: the web server is case-sensitive, so
+/// Leet_Chair.hab there does not serve the client's leet_chair.hab.
+pub async fn missing_on_server(server: &dyn Server, files: &[ClientFile]) -> Result<Vec<ClientFile>> {
+    let body = fill(LIST_CLIENT_FILES, &[("Gamedata", &crate::server::shell_quote(&crate::octane::gamedata()))]);
+    let output = script::root_output(server, &body, "Listing the server's furniture files failed").await?;
+    let there: HashSet<&str> = output.lines().map(str::trim).collect();
+    Ok(files.iter().filter(|f| !there.contains(format!("{}/{}", f.folder, f.name).as_str())).cloned().collect())
+}
+
+const UPLOAD_CLIENT_FILES: &str = r#"set -e
+install -d -m 2775 -o www-data -g www-data {{target}}
+tar -x -f - -C {{target}} --no-same-owner --no-same-permissions
+chown www-data:www-data {{target}}/* 2>/dev/null || true
+echo "OK""#;
+
+/// Uploads `files` into the server's gamedata (furniture/ and icons/), owned by www-data like the rest of it.
+/// `progress` gets the bytes sent so far, over all of them.
+pub async fn upload_client_files(server: &dyn Server, files: &[ClientFile], progress: crate::server::Progress<'_>) -> Result<usize> {
+    let sent = std::sync::atomic::AtomicU64::new(0);
+    for folder in ["furniture", "icons"] {
+        let part: Vec<&ClientFile> = files.iter().filter(|f| f.folder == folder).collect();
+        if part.is_empty() {
+            continue;
+        }
+        let target = crate::server::shell_quote(&format!("{}/{folder}", crate::octane::gamedata()));
+        let script = fill(UPLOAD_CLIENT_FILES, &[("target", &target)]);
+        let items: Vec<crate::asset_sync::tar_stream::TarItem> = part.iter().map(|f| crate::asset_sync::tar_stream::TarItem::file(&f.local, &f.name)).collect();
+        let before = sent.load(std::sync::atomic::Ordering::Relaxed);
+        let result = crate::asset_sync::tar_stream::upload(server, &script, &items, &|bytes| progress(before + bytes)).await?;
+        if !result.succeeded() || !result.output.contains("OK") {
+            return Err(crate::server::ServerError(format!("Unpacking the {folder} files on the server failed: {}", format!("{}{}", result.output, result.error).trim())).into());
+        }
+        sent.store(before + part.iter().map(|f| f.size).sum::<u64>(), std::sync::atomic::Ordering::Relaxed);
+    }
+    Ok(files.len())
 }
 
 #[cfg(test)]
@@ -495,6 +738,20 @@ mod tests {
         let names: Vec<&str> = plan.new.iter().map(|f| f.classname.as_str()).collect();
         assert_eq!(names, ["table_norja_med", "rare_dragonlamp*4", "rare_dragonlamp*0", "bed_trad", "poster"]);
         assert_eq!(plan.no_bundle, ["missing_bundle"]);
+        assert!(plan.capped.is_empty());
+        // A height items_base cannot hold gets the nearest one that fits.
+        let tall = json!({"roomitemtypes": {"furnitype": [{"id": 1, "classname": "tower"}, {"id": 2, "classname": "pit"}]}});
+        let tall_read = |name: &str| bundle(1.0, 1.0, if name == "tower" { 150.0 } else { -120.5 }, 1);
+        let tall = plan_with(&tall, &DbState::default(), &tall_read);
+        assert_eq!(tall.new.iter().map(|f| f.height).collect::<Vec<_>>(), [99.99, -99.99]);
+        assert_eq!(tall.capped, [("tower".to_string(), 150.0), ("pit".to_string(), -120.5)]);
+        // Too long for item_name: left out; ids that do not fit int(11): none / -1; public_name cut at 56.
+        let long_name = "x".repeat(71);
+        let odd = json!({"roomitemtypes": {"furnitype": [{"id": 1, "classname": long_name}, {"id": 3_000_000_000_i64, "offerid": 4_000_000_000_i64, "classname": "y".repeat(60)}]}});
+        let odd = plan_with(&odd, &DbState::default(), &|_| bundle(1.0, 1.0, 1.0, 1));
+        assert_eq!(odd.too_long, [long_name]);
+        assert_eq!((odd.new.len(), odd.new[0].sprite_id, odd.new[0].offer_id), (1, None, -1));
+        assert!(items_base_values(&odd.new[0], "@i").contains(&format!(", '{}', '{}', ", "y".repeat(60), "y".repeat(56))));
         assert_eq!((plan.floor(), plan.wall(), plan.variants()), (4, 1, 2));
         assert_eq!(plan.uncatalogued[0].offer_id, 5, "the offer id of its furnidata entry");
 
@@ -537,13 +794,70 @@ mod tests {
         );
         assert_eq!(page_caption(chrono::NaiveDate::from_ymd_opt(2026, 11, 5).unwrap()), "import_20261105");
         let plan = Plan { new: vec![furni], uncatalogued: vec![Uncatalogued { id: 77, name: "lamp".into(), sprite_id: 9, offer_id: 3 }], ..Plan::default() };
-        let text = sql(&plan, "import_20261105", -1, false, true);
+        let text = sql(&plan, "import_20261105", -1, false, true, 500);
         assert!(text.contains("START TRANSACTION;") && text.trim_end().ends_with("COMMIT;"));
         assert!(text.contains("VALUES (-1, 'default_3x3', 'import_20261105', 'import_20261105', 1, 1, 1, 99, '0', '1');"));
         assert!(text.contains("(CAST(@offer + 2 AS UNSIGNED), CAST(77 AS CHAR), @page, 3, 0, 99, 'lamp',"), "{text}");
         assert!(text.contains("(CAST(@item + 1 AS UNSIGNED), 18, 'chair_o"), "{text}");
-        assert!(!sql(&plan, "x", -1, true, false).contains("'lamp'"));
-        assert!(sql(&plan, "x", 2, true, false).contains("VALUES (2, 'default_3x3', 'x', 'x', 1, 1, 1, 99, '1', '1');"));
+        assert!(!sql(&plan, "x", -1, true, false, 500).contains("'lamp'"));
+        let moved = Plan { moved: vec![Moved { name: "leet_table".into(), kind: 's', from: 600, to: 123456 }], ..Plan::default() };
+        assert_eq!(moved.work(false), 1);
+        let text = sql(&moved, "x", -1, false, false, 500);
+        assert!(text.contains("UPDATE `items_base` SET `sprite_id` = 123456 WHERE `item_name` = 'leet_table' AND `type` = 's' AND `sprite_id` = 600;"), "{text}");
+        assert!(!text.contains("catalog_pages") && text.trim_end().ends_with("COMMIT;"), "no page without catalogue items");
+        // Name groups stay together; a group bigger than a page gets pages of its own.
+        assert_eq!(name_group("adobe_kaars2"), "adobe");
+        assert_eq!(name_group("rare_dragonlamp*4"), "rare");
+        assert_eq!(name_group("Duck"), "duck");
+        let names = ["adobe_kaars2", "bath_a", "adobe_kekook", "rare_x*1", "rare_x*2", "rare_y", "bed_a", "bed_b", "chair"];
+        let got: Vec<(String, Vec<&str>)> = pages(&names, 3).into_iter().map(|(c, i)| (c, i.into_iter().map(|i| names[i]).collect())).collect();
+        assert_eq!(
+            got,
+            vec![
+                ("adobe - bath".to_string(), vec!["adobe_kaars2", "adobe_kekook", "bath_a"]),
+                ("bed - chair".to_string(), vec!["bed_a", "bed_b", "chair"]),
+                ("rare".to_string(), vec!["rare_x*1", "rare_x*2", "rare_y"]),
+            ]
+        );
+        let got: Vec<String> = pages(&names, 2).into_iter().map(|(c, _)| c).collect();
+        assert_eq!(got, ["adobe", "bath", "bed", "chair", "rare-1", "rare-2"]);
+        let many = Plan { new: (0..5).map(|i| NewFurni { classname: format!("grp_{i}"), ..plan.new[0].clone() }).collect(), ..Plan::default() };
+        let text = sql(&many, "import_x", 7, false, false, 2);
+        assert!(text.contains("VALUES (7, 'default_3x3', 'import_x', 'import_x', 1, 1, 1, 99, '0', '1');"), "the folder, hidden");
+        assert!(text.contains("VALUES (@top, 'default_3x3', 'grp-1', 'grp-1', 1, 1, 1, 1, '1', '1');") && text.contains("'grp-3'"), "{text}");
+        assert!(text.contains("SELECT 'PAGES=3';"));
+        assert!(!sql(&many, "import_x", 7, false, false, 500).contains("@top, 'default_3x3'"), "one page when they fit");
+        assert!(sql(&plan, "x", 2, true, false, 500).contains("VALUES (2, 'default_3x3', 'x', 'x', 1, 1, 1, 99, '1', '1');"));
+    }
+
+    #[test]
+    fn the_files_of_the_imported_furni() {
+        let dir = std::env::temp_dir().join(format!("aio-client-files-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("furniture")).unwrap();
+        std::fs::create_dir_all(dir.join("icons")).unwrap();
+        for f in ["furniture/rare_dragonlamp.hab", "furniture/chair.hab", "icons/rare_dragonlamp_4_icon.png", "icons/chair_icon.png"] {
+            std::fs::write(dir.join(f), b"x").unwrap();
+        }
+        let furni = |name: &str| NewFurni {
+            classname: name.into(),
+            sprite_id: None,
+            offer_id: -1,
+            kind: 's',
+            width: 1.0,
+            length: 1.0,
+            height: 1.0,
+            allow_stack: false,
+            allow_sit: false,
+            allow_lay: false,
+            allow_walk: false,
+            interaction_type: "default",
+            modes: 1,
+        };
+        let files = client_files(&[furni("rare_dragonlamp*4"), furni("rare_dragonlamp*5"), furni("Chair"), furni("gone")], &dir);
+        let names: Vec<String> = files.iter().map(|f| format!("{}/{}", f.folder, f.name)).collect();
+        // One bundle per base name, an icon only where there is one, the lower-case file for "Chair".
+        assert_eq!(names, ["furniture/rare_dragonlamp.hab", "icons/rare_dragonlamp_4_icon.png", "furniture/chair.hab", "icons/chair_icon.png"]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -554,6 +868,7 @@ mod tests {
         assert_eq!((state.items_base, state.catalog_items), (5, 2));
         assert!(state.names.contains("chair_norja"));
         assert_eq!(state.pages.get(&2).map(String::as_str), Some("Meubels"));
+        assert_eq!(state.sprites.get("chair_norja"), Some(&(14, 's')));
         assert_eq!(state.uncatalogued, vec![Uncatalogued { id: 2, name: "Chair_Norja".into(), sprite_id: 14, offer_id: -1 }]);
     }
 }

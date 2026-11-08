@@ -961,7 +961,7 @@ mod tests {
 
 /// Import Assets' finish page: where the furniture went, how to move it, and the way back.
 pub fn import_assets(imported: super::import_assets::Imported, steps: Steps, shared: crate::gui::Shared) -> Box<dyn FinishPage> {
-    let upload = std::sync::Arc::new(std::sync::Mutex::new(super::import_assets::FileUpload::default()));
+    let upload = std::sync::Arc::new(parking_lot::Mutex::new(super::import_assets::FileUpload::default()));
     Page::boxed(move |ui, palette| {
         let ok = clean(&steps);
         let heading = match (&imported.result, ok) {
@@ -998,7 +998,7 @@ pub fn import_assets(imported: super::import_assets::Imported, steps: Steps, sha
                     ),
                     13.0,
                 );
-                let state = upload.lock().unwrap();
+                let state = upload.lock();
                 let (running, sent, result) = (state.running, state.sent, state.result.clone());
                 drop(state);
                 match (&result, running) {

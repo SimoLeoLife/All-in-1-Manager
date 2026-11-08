@@ -6,12 +6,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use aio_remote::catalog_admin::{self, FieldKind, Furni, FurniColumn, Offer, Page, PageUndo, PlaceUndo};
 use aio_remote::sql_session::SqlSession;
 use aio_remote::Server;
 use eframe::egui::{self, Color32, CornerRadius, RichText, Sense, Stroke};
+use parking_lot::Mutex;
 
 use super::sql_editor::login::{Login, Prompt};
 use super::sql_editor::text;
@@ -304,8 +305,8 @@ fn server_id(server: &Arc<dyn Server>) -> usize {
 }
 
 impl Ctl {
-    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap()
+    fn lock(&self) -> parking_lot::MutexGuard<'_, State> {
+        self.state.lock()
     }
 
     fn with<R>(&self, generation: u64, change: impl FnOnce(&mut State) -> R) -> Option<R> {
@@ -734,7 +735,7 @@ impl CatalogExplorerView {
         let Some(server) = shared.session() else { return };
         let id = server_id(&server);
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             if state.session_for == Some(id) {
                 return;
             }
@@ -757,7 +758,7 @@ impl View for CatalogExplorerView {
         let ctx = ui.ctx().clone();
         let mut actions = Vec::new();
         {
-            let mut guard = self.state.lock().unwrap();
+            let mut guard = self.state.lock();
             let s = &mut *guard;
             editor_window(&ctx, palette, s, &mut self.images, &mut actions);
             if let Some(prompt) = s.prompt.as_mut() {
@@ -820,8 +821,8 @@ impl View for CatalogExplorerView {
                 Action::LoadOffers(page) => ctl.spawn(move |c| async move { c.load_offers(page).await }),
                 Action::FurniNames(ids) => ctl.spawn(move |c| async move { c.furni_names(ids).await }),
                 Action::Place { ids, page, before, copy } => {
-                    if self.state.lock().unwrap().sample {
-                        sample_place(&mut self.state.lock().unwrap(), &ids, page, before, copy);
+                    if self.state.lock().sample {
+                        sample_place(&mut self.state.lock(), &ids, page, before, copy);
                     } else {
                         ctl.spawn(move |c| c.place(ids, page, before, copy));
                     }
@@ -829,7 +830,7 @@ impl View for CatalogExplorerView {
                 Action::PlaceFurni { ids, page, before } => ctl.spawn(move |c| c.place_furni(ids, page, before)),
                 Action::MovePage { id, parent, before } => ctl.spawn(move |c| c.move_page(id, parent, before)),
                 Action::LoadUnoffered => ctl.spawn(|c| async move { c.load_unoffered().await }),
-                Action::EditRow { table, id, furni, .. } if self.state.lock().unwrap().sample => sample_editor(&mut self.state.lock().unwrap(), table, id, furni),
+                Action::EditRow { table, id, furni, .. } if self.state.lock().sample => sample_editor(&mut self.state.lock(), table, id, furni),
                 Action::EditRow { table, id, furni, page } => ctl.spawn(move |c| c.edit_row(table, id, furni, page)),
                 Action::SaveRow => ctl.spawn(|c| c.save_row()),
                 Action::Undo => ctl.spawn(|c| c.undo()),
@@ -839,11 +840,11 @@ impl View for CatalogExplorerView {
     }
 
     fn busy(&self) -> bool {
-        self.state.lock().unwrap().busy
+        self.state.lock().busy
     }
 
     fn session_changed(&mut self, shared: &Shared) {
-        self.state.lock().unwrap().close(shared);
+        self.state.lock().close(shared);
     }
 }
 

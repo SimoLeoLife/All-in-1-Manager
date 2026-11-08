@@ -527,7 +527,7 @@ mod tests {
 
     #[test]
     fn wired_order_and_labels() {
-        let mut threads = vec![thread(9, "WiredTickHeavy-0"), thread(5, "WiredTickShard-1"), thread(7, "WiredTickCoordinator"), thread(4, "WiredTickShard-0")];
+        let mut threads = [thread(9, "WiredTickHeavy-0"), thread(5, "WiredTickShard-1"), thread(7, "WiredTickCoordinator"), thread(4, "WiredTickShard-0")];
         threads.sort_by_key(wired_order);
         let ids: Vec<i32> = threads.iter().map(|t| t.id).collect();
         assert_eq!(ids, [7, 4, 5, 9]);

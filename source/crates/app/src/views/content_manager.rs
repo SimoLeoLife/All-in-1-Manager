@@ -1537,7 +1537,7 @@ mod tests {
         bubble.values[0] = "12".into();
         assert!(Kind::ChatBubbles.problem(&bubble, &[], None).is_some(), "the client's own styles are below 46");
         let taken = stored(&CHAT_BUBBLES, 1, &["200", "SHOW_MESSAGE_RED", "", "1", "0", "0"]);
-        assert_eq!(next_number(&CHAT_BUBBLES, &[taken.clone()], &bubble, "type", 46, None), 201);
+        assert_eq!(next_number(&CHAT_BUBBLES, std::slice::from_ref(&taken), &bubble, "type", 46, None), 201);
         bubble.values[0] = "200".into();
         assert!(Kind::ChatBubbles.problem(&bubble, &[taken], None).is_some(), "200 is there");
 

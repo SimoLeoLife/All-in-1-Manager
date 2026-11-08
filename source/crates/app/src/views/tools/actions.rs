@@ -571,7 +571,7 @@ async fn furniture_language_tool(job: &Job) -> Result<()> {
         .iter()
         .map(|l| {
             let name = crate::views::default_catalog::native_name(*l);
-            let choice = Choice::new(name, &tf("The furnidata of {domain}", &[("domain", l.domain)]), Some(l.code));
+            let choice = Choice::new(name, tf("The furnidata of {domain}", &[("domain", l.domain)]), Some(l.code));
             if current.as_deref() == Some(l.code) {
                 choice.primary()
             } else {

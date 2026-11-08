@@ -821,7 +821,7 @@ mod tests {
         let a = PathBuf::from("/c/keys/10.0.0.1/id_ed25519");
         let b = PathBuf::from("/c/keys/hotel.example.com/id_ed25519");
         let browsed = PathBuf::from("/home/me/.ssh/id_rsa");
-        let paths = key_paths(&[browsed.clone()], &[a.clone(), b.clone(), browsed.clone()], None, None);
+        let paths = key_paths(std::slice::from_ref(&browsed), &[a.clone(), b.clone(), browsed.clone()], None, None);
         assert_eq!(paths, vec![browsed.clone(), a.clone(), b.clone()]);
         assert_eq!(choose_key(&paths, None, None, "hotel.example.com"), Some(2));
         assert_eq!(choose_key(&paths, None, None, "example"), Some(2));
@@ -830,7 +830,7 @@ mod tests {
         assert_eq!(choose_key(&paths, None, None, ""), Some(0));
         assert_eq!(choose_key(&[], None, None, "x"), None);
         let preset = PathBuf::from("/c/keys/x/default");
-        assert_eq!(key_paths(&[], &[a.clone()], Some(&preset), None), vec![preset, a]);
+        assert_eq!(key_paths(&[], std::slice::from_ref(&a), Some(&preset), None), vec![preset, a]);
     }
 
     #[test]

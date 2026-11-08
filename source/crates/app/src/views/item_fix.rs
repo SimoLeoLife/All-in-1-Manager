@@ -580,7 +580,7 @@ impl InstallStep for ItemFixStep {
 /// among several. The choice holds for every tool until the installer closes and is saved in Settings.
 pub(super) async fn choose_database(server: &dyn Server, ui: &StepUi) -> anyhow::Result<(String, Vec<String>)> {
     let (configured, found) = item_fix::hotel_databases(server).await?;
-    if found.iter().any(|d| *d == configured) {
+    if found.contains(&configured) {
         return Ok((configured, found));
     }
     let chosen = match found.as_slice() {

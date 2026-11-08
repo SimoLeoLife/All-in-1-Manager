@@ -1403,9 +1403,376 @@ pub async fn reload_catalog(server: &dyn Server) -> Result<()> {
     Err(ServerError(format!("The emulator did not reload the catalogue: {}", if answer.message.is_empty() { format!("status {}", answer.status) } else { answer.message })).into())
 }
 
+// ---- Catalogue explorer: offers dragged onto a page --------------------------------------------------------
+
+/// A page's offer ids after `dragged` are put before `before` (None, or an id not on the page: at the end). An id
+/// already on the page moves; the others are added. Every id once.
+pub fn arranged(current: &[i64], dragged: &[i64], before: Option<i64>) -> Vec<i64> {
+    let mut moving = Vec::new();
+    for id in dragged {
+        if !moving.contains(id) {
+            moving.push(*id);
+        }
+    }
+    // Dropped before one of the dragged offers themselves: before the first offer after it that stays.
+    let anchor = before.and_then(|b| {
+        let from = current.iter().position(|id| *id == b)?;
+        current[from..].iter().copied().find(|id| !moving.contains(id))
+    });
+    let mut order: Vec<i64> = current.iter().copied().filter(|id| !moving.contains(id)).collect();
+    let at = anchor.and_then(|a| order.iter().position(|id| *id == a)).unwrap_or(order.len());
+    order.splice(at..at, moving);
+    order
+}
+
+/// Puts the offers of `order` on `page_id`, numbered 1, 2, 3 ... in that order.
+pub fn arrange_statements(database: &str, page_id: i64, order: &[i64]) -> Vec<(String, Vec<SqlValue>)> {
+    let sql = format!("UPDATE {}.catalog_items SET page_id = ?, order_number = ? WHERE id = ?", quote(database));
+    order.iter().enumerate().map(|(i, id)| (sql.clone(), vec![SqlValue::Int(page_id), SqlValue::Int(i as i64 + 1), SqlValue::Int(*id)])).collect()
+}
+
+/// What a drop changed, to put it back: each offer's page and number before, and the copies it added.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PlaceUndo {
+    pub before: Vec<(i64, i64, i64)>,
+    pub inserted: Vec<i64>,
+    /// The pages whose offers changed.
+    pub pages: Vec<i64>,
+}
+
+/// The statements that undo a drop: the copies removed, every offer back on its page with its number.
+pub fn undo_statements(database: &str, undo: &PlaceUndo) -> Vec<(String, Vec<SqlValue>)> {
+    let db = quote(database);
+    let mut statements: Vec<(String, Vec<SqlValue>)> =
+        undo.inserted.iter().map(|id| (format!("DELETE FROM {db}.catalog_items WHERE id = ?"), vec![SqlValue::Int(*id)])).collect();
+    statements.extend(undo.before.iter().map(|(id, page, number)| {
+        (format!("UPDATE {db}.catalog_items SET page_id = ?, order_number = ? WHERE id = ?"), vec![SqlValue::Int(*page), SqlValue::Int(*number), SqlValue::Int(*id)])
+    }));
+    statements
+}
+
+/// The offers of these ids.
+pub fn offers_by_ids_sql(database: &str, count: usize) -> String {
+    let marks = vec!["?"; count.max(1)].join(", ");
+    format!("SELECT {OFFER_COLUMNS} FROM {}.catalog_items WHERE id IN ({marks}) ORDER BY id", quote(database))
+}
+
+/// Moves `ids` (or, with `copy`, copies of them) onto `page_id` before the offer `before` (None: at the end), and
+/// numbers the page's offers again, in one transaction. The page and the offers are read again first, so what
+/// others changed meanwhile counts. Returns what undoes it.
+pub async fn place_offers(session: &SqlSession, database: &str, ids: &[i64], page_id: i64, before: Option<i64>, copy: bool) -> Result<PlaceUndo> {
+    if ids.is_empty() {
+        return Ok(PlaceUndo::default());
+    }
+    let target = load_offers(session, database, page_id).await?;
+    let rows = session.select(&offers_by_ids_sql(database, ids.len()), ids.iter().map(|id| SqlValue::Int(*id)).collect()).await?;
+    let dragged: Vec<Offer> = rows.iter().map(|row| offer_from_row(row)).collect();
+    // In the order they were dragged.
+    let dragged: Vec<Offer> = ids.iter().filter_map(|id| dragged.iter().find(|o| o.id == *id).cloned()).collect();
+    let mut inserted = Vec::new();
+    let placed: Vec<i64> = if copy {
+        for offer in &dragged {
+            let copy = Offer { id: 0, page_id, ..offer.clone() };
+            match save_offer(session, database, &copy).await {
+                Ok(id) => inserted.push(id),
+                Err(error) => {
+                    let _ = session.execute(&undo_statements(database, &PlaceUndo { inserted, ..PlaceUndo::default() })).await;
+                    return Err(error);
+                }
+            }
+        }
+        inserted.clone()
+    } else {
+        dragged.iter().map(|o| o.id).collect()
+    };
+    let order = arranged(&target.iter().map(|o| o.id).collect::<Vec<_>>(), &placed, before);
+    let mut undo = PlaceUndo { inserted: inserted.clone(), pages: vec![page_id], ..PlaceUndo::default() };
+    for offer in target.iter().chain(dragged.iter().filter(|_| !copy)) {
+        if !undo.before.iter().any(|(id, _, _)| *id == offer.id) {
+            undo.before.push((offer.id, offer.page_id, offer.order_number));
+        }
+        if !undo.pages.contains(&offer.page_id) {
+            undo.pages.push(offer.page_id);
+        }
+    }
+    if let Err(error) = session.execute(&arrange_statements(database, page_id, &order)).await {
+        let _ = session.execute(&undo_statements(database, &PlaceUndo { inserted, ..PlaceUndo::default() })).await;
+        return Err(error);
+    }
+    Ok(undo)
+}
+
+/// Puts a drop back (see [`place_offers`]), in one transaction.
+pub async fn undo_place(session: &SqlSession, database: &str, undo: &PlaceUndo) -> Result<u64> {
+    Ok(session.execute(&undo_statements(database, undo)).await?.0)
+}
+
+/// Gives `furni` (no offer sells them yet) an offer each on `page_id`, before the offer `before` (None: at the end):
+/// named after the class name, 3 credits, as a new offer starts. Returns what undoes it (the new offers removed).
+pub async fn place_new_furni(session: &SqlSession, database: &str, furni: &[Furni], page_id: i64, before: Option<i64>) -> Result<PlaceUndo> {
+    let mut inserted = Vec::new();
+    for offer in offers_for(furni, page_id, &[], 3, 0, 0) {
+        match save_offer(session, database, &offer).await {
+            Ok(id) => inserted.push(id),
+            Err(error) => {
+                let _ = session.execute(&undo_statements(database, &PlaceUndo { inserted, ..PlaceUndo::default() })).await;
+                return Err(error);
+            }
+        }
+    }
+    match place_offers(session, database, &inserted, page_id, before, false).await {
+        Ok(mut undo) => {
+            undo.before.retain(|(id, _, _)| !inserted.contains(id));
+            undo.inserted = inserted;
+            Ok(undo)
+        }
+        Err(error) => {
+            let _ = session.execute(&undo_statements(database, &PlaceUndo { inserted, ..PlaceUndo::default() })).await;
+            Err(error)
+        }
+    }
+}
+
+/// What a page move changed, to put it back: each page's parent and order before.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PageUndo {
+    pub before: Vec<(i64, i64, i64)>,
+}
+
+/// Why `page` cannot go under `parent`, or None: never under itself or one of its own pages.
+pub fn page_move_problem(pages: &[Page], page: i64, parent: i64) -> Option<String> {
+    if page == parent || is_ancestor(pages, page, parent) {
+        return Some("A page cannot go under itself or one of its own pages.".into());
+    }
+    None
+}
+
+/// Puts the pages of `order` under `parent`, numbered 1, 2, 3 ... in that order.
+pub fn page_order_statements(database: &str, parent: i64, order: &[i64]) -> Vec<(String, Vec<SqlValue>)> {
+    let sql = format!("UPDATE {}.catalog_pages SET parent_id = ?, order_num = ? WHERE id = ?", quote(database));
+    order.iter().enumerate().map(|(i, id)| (sql.clone(), vec![SqlValue::Int(parent), SqlValue::Int(i as i64 + 1), SqlValue::Int(*id)])).collect()
+}
+
+/// Moves `page` under `parent`, before the page `before` (None: last), and numbers the pages under `parent` again, in
+/// one transaction. The pages are read again first. Returns what undoes it.
+pub async fn move_page(session: &SqlSession, database: &str, page: i64, parent: i64, before: Option<i64>) -> Result<PageUndo> {
+    let pages = load_pages(session, database).await?;
+    if let Some(problem) = page_move_problem(&pages, page, parent) {
+        return Err(ServerError(problem).into());
+    }
+    let mut siblings: Vec<&Page> = pages.iter().filter(|p| p.parent_id == parent && p.id != parent).collect();
+    siblings.sort_by_key(|p| (p.order_num, p.id));
+    let order = arranged(&siblings.iter().map(|p| p.id).collect::<Vec<_>>(), &[page], before);
+    let before: Vec<(i64, i64, i64)> = order.iter().filter_map(|id| pages.iter().find(|p| p.id == *id)).map(|p| (p.id, p.parent_id, p.order_num)).collect();
+    session.execute(&page_order_statements(database, parent, &order)).await?;
+    Ok(PageUndo { before })
+}
+
+/// Puts a page move back, in one transaction.
+pub async fn undo_page_move(session: &SqlSession, database: &str, undo: &PageUndo) -> Result<u64> {
+    let sql = format!("UPDATE {}.catalog_pages SET parent_id = ?, order_num = ? WHERE id = ?", quote(database));
+    let statements: Vec<_> = undo.before.iter().map(|(id, parent, order)| (sql.clone(), vec![SqlValue::Int(*parent), SqlValue::Int(*order), SqlValue::Int(*id)])).collect();
+    Ok(session.execute(&statements).await?.0)
+}
+
+// ---- The furni editor: one items_base row, every column ---------------------------------------------------
+
+/// How a column of items_base is edited, from its type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FieldKind {
+    /// `enum('0','1')` (allow_sit, allow_trade ...) or `tinyint(1)`: a tick.
+    Flag,
+    /// Another enum: one of these.
+    Choice(Vec<String>),
+    Integer { unsigned: bool },
+    Decimal,
+    /// Text, at most this many characters when the type says so.
+    Text { max: Option<usize> },
+}
+
+/// One column of items_base as `SHOW FULL COLUMNS` describes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FurniColumn {
+    pub name: String,
+    /// The type as MariaDB writes it: `int(11)`, `enum('0','1')`, `varchar(70)`, `double(4,2)` ...
+    pub column_type: String,
+    pub nullable: bool,
+    pub comment: String,
+}
+
+impl FurniColumn {
+    pub fn kind(&self) -> FieldKind {
+        field_kind(&self.column_type)
+    }
+}
+
+/// The field for a column type.
+pub fn field_kind(column_type: &str) -> FieldKind {
+    let lower = column_type.trim().to_lowercase();
+    let size = || lower.split_once('(').and_then(|(_, rest)| rest.split([')', ',']).next()?.trim().parse::<usize>().ok());
+    if lower.starts_with("enum(") && lower.ends_with(')') {
+        let inner = &column_type.trim()[5..column_type.trim().len() - 1];
+        let options: Vec<String> = inner.split(',').map(|o| o.trim().trim_matches('\'').replace("''", "'")).collect();
+        let mut sorted = options.clone();
+        sorted.sort();
+        return if sorted == ["0", "1"] { FieldKind::Flag } else { FieldKind::Choice(options) };
+    }
+    if lower.starts_with("tinyint(1)") {
+        return FieldKind::Flag;
+    }
+    if ["tinyint", "smallint", "mediumint", "int", "bigint"].iter().any(|t| lower.starts_with(t)) {
+        return FieldKind::Integer { unsigned: lower.contains("unsigned") };
+    }
+    if ["double", "float", "decimal", "real"].iter().any(|t| lower.starts_with(t)) {
+        return FieldKind::Decimal;
+    }
+    if lower.starts_with("varchar") || lower.starts_with("char") {
+        return FieldKind::Text { max: size() };
+    }
+    FieldKind::Text { max: None }
+}
+
+/// Why `value` cannot go in the column, or None.
+pub fn field_problem(column: &FurniColumn, value: &str) -> Option<String> {
+    let value = value.trim();
+    match column.kind() {
+        FieldKind::Flag => (!matches!(value, "0" | "1")).then(|| format!("{}: 0 or 1", column.name)),
+        FieldKind::Choice(options) => (!options.iter().any(|o| o == value)).then(|| format!("{}: one of {}", column.name, options.join(", "))),
+        FieldKind::Integer { unsigned } => match value.parse::<i64>() {
+            Ok(n) if unsigned && n < 0 => Some(format!("{}: not below 0", column.name)),
+            Ok(_) => None,
+            Err(_) => Some(format!("{}: a whole number", column.name)),
+        },
+        FieldKind::Decimal => value.parse::<f64>().is_err().then(|| format!("{}: a number such as 1.25", column.name)),
+        FieldKind::Text { max: Some(max) } => (value.chars().count() > max).then(|| format!("{}: at most {max} characters", column.name)),
+        FieldKind::Text { max: None } => None,
+    }
+}
+
+fn furni_column_from_row(row: &[SqlValue]) -> FurniColumn {
+    // SHOW FULL COLUMNS: Field, Type, Collation, Null, Key, Default, Extra, Privileges, Comment.
+    FurniColumn {
+        name: text(row.first()),
+        column_type: text(row.get(1)),
+        nullable: text(row.get(3)).eq_ignore_ascii_case("YES"),
+        comment: text(row.get(8)),
+    }
+}
+
+/// The columns of `table` (items_base, catalog_items ...), in the table's order.
+pub async fn table_columns(session: &SqlSession, database: &str, table: &str) -> Result<Vec<FurniColumn>> {
+    let result = session.columns(database, table).await?;
+    Ok(result.rows.iter().map(|row| furni_column_from_row(row)).collect())
+}
+
+/// The columns of items_base.
+pub async fn furni_columns(session: &SqlSession, database: &str) -> Result<Vec<FurniColumn>> {
+    table_columns(session, database, "items_base").await
+}
+
+/// The row of `table` with this id: each column's value as text (None: NULL), by column name.
+pub async fn load_row(session: &SqlSession, database: &str, table: &str, id: i64) -> Result<Vec<(String, Option<String>)>> {
+    let result = session.table_data(database, table, &format!("`id` = {id}"), None, false, 0, 1).await?;
+    let columns = result.columns.unwrap_or_default();
+    let Some(row) = result.rows.first() else {
+        return Err(ServerError(format!("{table} has no row with id {id}.")).into());
+    };
+    Ok(columns.iter().zip(row).map(|(c, v)| (c.name.clone(), crate::sql_session::display(v, Some(c), usize::MAX))).collect())
+}
+
+/// One furni's items_base row.
+pub async fn load_furni_row(session: &SqlSession, database: &str, id: i64) -> Result<Vec<(String, Option<String>)>> {
+    load_row(session, database, "items_base", id).await
+}
+
+/// The UPDATE of the changed columns of row `id` of `table` (None: NULL).
+pub fn update_statement(database: &str, table: &str, id: i64, changes: &[(String, Option<String>)]) -> (String, Vec<SqlValue>) {
+    let set: Vec<String> = changes.iter().map(|(column, _)| format!("{} = ?", quote(column))).collect();
+    let mut params: Vec<SqlValue> = changes.iter().map(|(_, value)| value.clone().map(SqlValue::Text).unwrap_or(SqlValue::Null)).collect();
+    params.push(SqlValue::Int(id));
+    (format!("UPDATE {}.{table} SET {} WHERE id = ?", quote(database), set.join(", ")), params)
+}
+
+/// The UPDATE of the changed columns of furni `id`.
+pub fn furni_update_statement(database: &str, id: i64, changes: &[(String, Option<String>)]) -> (String, Vec<SqlValue>) {
+    update_statement(database, "items_base", id, changes)
+}
+
+/// Saves the changed columns of row `id` of `table` in one statement.
+pub async fn save_row(session: &SqlSession, database: &str, table: &str, id: i64, changes: &[(String, Option<String>)]) -> Result<u64> {
+    if changes.is_empty() {
+        return Ok(0);
+    }
+    Ok(session.execute(&[update_statement(database, table, id, changes)]).await?.0)
+}
+
+/// Saves the changed columns of furni `id`.
+pub async fn save_furni(session: &SqlSession, database: &str, id: i64, changes: &[(String, Option<String>)]) -> Result<u64> {
+    save_row(session, database, "items_base", id, changes).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offers_are_arranged_like_a_drop() {
+        // Onto another page: before an offer, or at the end.
+        assert_eq!(arranged(&[1, 2, 3], &[9, 8], Some(2)), [1, 9, 8, 2, 3]);
+        assert_eq!(arranged(&[1, 2, 3], &[9], None), [1, 2, 3, 9]);
+        assert_eq!(arranged(&[1, 2, 3], &[9], Some(77)), [1, 2, 3, 9], "not on the page: at the end");
+        // Within the page: 3 moves before 1; 1 and 2 dropped before 2 itself land before 3.
+        assert_eq!(arranged(&[1, 2, 3], &[3], Some(1)), [3, 1, 2]);
+        assert_eq!(arranged(&[1, 2, 3, 4], &[1, 2], Some(2)), [1, 2, 3, 4]);
+        assert_eq!(arranged(&[1, 2, 3, 4], &[4, 4], Some(2)), [1, 4, 2, 3], "every id once");
+        assert_eq!(arranged(&[], &[5, 6], Some(1)), [5, 6]);
+    }
+
+    #[test]
+    fn pages_move_but_never_under_themselves() {
+        let pages = vec![page(1, -1, "Furni", 1), page(2, 1, "Area", 1), page(3, 2, "Area Blue", 1), page(4, 1, "Mode", 2)];
+        assert!(page_move_problem(&pages, 2, 3).is_some(), "under its own page");
+        assert!(page_move_problem(&pages, 2, 2).is_some(), "under itself");
+        assert_eq!(page_move_problem(&pages, 3, 4), None);
+        let statements = page_order_statements("hotel", 1, &[4, 2]);
+        assert_eq!(statements[0].0, "UPDATE `hotel`.catalog_pages SET parent_id = ?, order_num = ? WHERE id = ?");
+        assert_eq!(statements[1].1, vec![SqlValue::Int(1), SqlValue::Int(2), SqlValue::Int(2)]);
+    }
+
+    #[test]
+    fn furni_columns_become_fields() {
+        assert_eq!(field_kind("enum('0','1')"), FieldKind::Flag);
+        assert_eq!(field_kind("tinyint(1)"), FieldKind::Flag);
+        assert_eq!(field_kind("enum('s','i','e','h','v','r','b','p')"), FieldKind::Choice(["s", "i", "e", "h", "v", "r", "b", "p"].map(String::from).to_vec()));
+        assert_eq!(field_kind("int(11) unsigned"), FieldKind::Integer { unsigned: true });
+        assert_eq!(field_kind("int(11)"), FieldKind::Integer { unsigned: false });
+        assert_eq!(field_kind("double(4,2)"), FieldKind::Decimal);
+        assert_eq!(field_kind("varchar(70)"), FieldKind::Text { max: Some(70) });
+        assert_eq!(field_kind("text"), FieldKind::Text { max: None });
+        let column = |t: &str| FurniColumn { name: "x".into(), column_type: t.into(), nullable: false, comment: String::new() };
+        assert_eq!(field_problem(&column("int(11) unsigned"), "-1").as_deref(), Some("x: not below 0"));
+        assert_eq!(field_problem(&column("int(11)"), "12"), None);
+        assert!(field_problem(&column("double(4,2)"), "1,5").is_some());
+        assert_eq!(field_problem(&column("varchar(3)"), "abcd").as_deref(), Some("x: at most 3 characters"));
+        assert!(field_problem(&column("enum('0','1')"), "2").is_some());
+        let (sql, params) = furni_update_statement("hotel", 7, &[("allow_sit".into(), Some("1".into())), ("vending_ids".into(), None)]);
+        assert_eq!(sql, "UPDATE `hotel`.items_base SET `allow_sit` = ?, `vending_ids` = ? WHERE id = ?");
+        assert_eq!(params, vec![SqlValue::Text("1".into()), SqlValue::Null, SqlValue::Int(7)]);
+        let (sql, _) = update_statement("hotel", "catalog_items", 9, &[("cost_credits".into(), Some("25".into()))]);
+        assert_eq!(sql, "UPDATE `hotel`.catalog_items SET `cost_credits` = ? WHERE id = ?");
+    }
+
+    #[test]
+    fn a_drop_is_written_and_undone() {
+        let statements = arrange_statements("hotel", 7, &[3, 1]);
+        assert_eq!(statements.len(), 2);
+        assert_eq!(statements[0].0, "UPDATE `hotel`.catalog_items SET page_id = ?, order_number = ? WHERE id = ?");
+        assert_eq!(statements[1].1, vec![SqlValue::Int(7), SqlValue::Int(2), SqlValue::Int(1)]);
+        let undo = PlaceUndo { before: vec![(3, 5, 4)], inserted: vec![40], pages: vec![7, 5] };
+        let back = undo_statements("hotel", &undo);
+        assert_eq!(back[0].0, "DELETE FROM `hotel`.catalog_items WHERE id = ?");
+        assert_eq!(back[1].1, vec![SqlValue::Int(5), SqlValue::Int(4), SqlValue::Int(3)]);
+    }
 
     fn page(id: i64, parent_id: i64, caption: &str, order_num: i64) -> Page {
         Page {

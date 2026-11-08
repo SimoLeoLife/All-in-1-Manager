@@ -1374,6 +1374,50 @@ through the same SSH tunnel and MariaDB login as the SQL Editor.
 
 Every change is one statement with its values sent separately, in a transaction; nothing typed in becomes SQL text.
 
+
+### Catalogue explorer
+
+**HOTEL → Catalogue explorer** shows the same catalogue as the game does, in **two windows side by side** (or one:
+**One window**): the root pages as tabs, the page tree with its icons on the left (hidden pages grey, switched-off
+ones marked *off*), and the page's furni as a grid with an info box for the one selected: a large icon, its name,
+class name and offer, and the price in credits, duckets or diamonds (*LTD* marks a limited series, *+* a bundle).
+The icons come from the downloaded assets (**Habbo assets** and the Nitro retro profiles), the furni names from
+`items_base`.
+
+A **front page** (layout `frontpage`, `frontpage4`, ...) holds promotions, not furni: it is locked here (no drops;
+its promotions are edited on the Catalogue page). The icons are drawn as the game does, each image pixel on whole
+screen pixels at any display scale, so they stay sharp (twice their size in the info box).
+
+Furni are dragged like files in the Asset Explorer:
+
+- onto the **other window**, or onto a **page in either tree**: they move to that page, at the end;
+- onto **another furni**: they go in before it, also on the same page (to change the order);
+- with **Ctrl** held: a copy goes there, the original stays.
+
+**Pages** are dragged in the tree like folders: onto the middle of a page to put it under that page, onto its top or
+bottom edge to put it before or after it (also to change the order), or onto a tab to put it under that root page.
+A page never goes under itself or one of its own pages, and nothing goes into a front page.
+
+The **Without offer** tab (after the root pages) lists the furni no offer sells yet (search on the name, class name or
+id): drag them onto a page in the other window, or a page in its tree, and each gets an offer there (named after its
+class name, 3 credits; the price is set on the Catalogue page).
+
+**Right-click** a furni (in a page or on the Without offer tab) and **Edit furni** opens its `items_base` row: every
+column of the table as this emulator has it, read from the database (so other columns work too). The `enum('0','1')`
+flags (allow_sit, allow_trade ...) are ticks, other enums a list (`type`), numbers and text fields with their column
+type next to them (the column's comment on hover); a column that may be NULL has a NULL tick, and `id` stays as it
+is. Changed values are marked and checked (whole numbers, decimals, the text length); **Save changes** writes only
+those, in one statement. A bundle offers an entry per furni. The emulator reads `items_base` when it starts: restart
+it (Tools) or use `:update_items` in the hotel.
+
+The same menu has **Edit offer**: the offer's `catalog_items` row in the same editor (price in credits and points
+with their type, amount, page, order, limited series, offer id, extra data, the flags as ticks ...). After a save
+the page is read again (also the new page when `page_id` changed); **Publish** shows it in the hotel.
+
+Ctrl-click and Shift-click select several. Every drop is saved at once in one transaction (the page's offers are
+numbered again in their new order); **Undo** puts the last drop back. **Publish** makes the emulator load the
+catalogue again, as on the Catalogue page.
+
 ### Content
 
 **HOTEL → Content** edits the hotel's plain content tables in the same database, through the same SSH tunnel and

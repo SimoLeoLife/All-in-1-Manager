@@ -2,11 +2,12 @@
 //! check list, the result and the live log. A step only detects and installs; it runs as a task on the runtime and
 //! talks to the window through its [`StepUi`].
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use aio_remote::{Server, ServerError};
 use async_trait::async_trait;
 use eframe::egui::{self, RichText};
+use parking_lot::Mutex;
 
 use super::dialogs::{Choice, Dialogs};
 use super::icons::{self, Icon};
@@ -79,8 +80,8 @@ impl StepUi {
         Self { state: Arc::new(Mutex::new(state)), ctx, dialogs, status, title: title.into() }
     }
 
-    pub fn state(&self) -> std::sync::MutexGuard<'_, StepState> {
-        self.state.lock().unwrap()
+    pub fn state(&self) -> parking_lot::MutexGuard<'_, StepState> {
+        self.state.lock()
     }
 
     fn changed(&self) {
@@ -146,7 +147,7 @@ impl StepUi {
     }
 
     pub fn set_status(&self, message: &str) {
-        *self.status.lock().unwrap() = message.to_string();
+        *self.status.lock() = message.to_string();
         self.changed();
     }
 

@@ -18,7 +18,7 @@ pub mod theme;
 pub mod widgets;
 pub mod wizard;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use aio_remote::Server;
 use eframe::egui::{self, Color32, RichText};
@@ -27,6 +27,7 @@ use crate::i18n::{t, tf};
 use crate::views;
 use dialogs::{Choice, Dialogs};
 use icons::Icon;
+use parking_lot::Mutex;
 use theme::{Fixed, Palette};
 use wizard::{Wizard, WizardAction};
 
@@ -107,20 +108,20 @@ pub enum Request {
 impl Shared {
     /// The login while it is connected.
     pub fn session(&self) -> Option<Arc<dyn Server>> {
-        self.session.lock().unwrap().clone().filter(|s| s.is_connected())
+        self.session.lock().clone().filter(|s| s.is_connected())
     }
 
     pub fn set_status(&self, message: &str) {
-        *self.status.lock().unwrap() = message.to_string();
+        *self.status.lock() = message.to_string();
         self.ctx.request_repaint();
     }
 
     pub fn status(&self) -> String {
-        self.status.lock().unwrap().clone()
+        self.status.lock().clone()
     }
 
     pub fn request(&self, request: Request) {
-        self.requests.lock().unwrap().push(request);
+        self.requests.lock().push(request);
         self.ctx.request_repaint();
     }
 
@@ -327,7 +328,7 @@ impl App {
             self.shared.set_status(t("Wait until the running step has finished before disconnecting."));
             return;
         }
-        *self.shared.session.lock().unwrap() = None;
+        *self.shared.session.lock() = None;
         // A drop noticed while closing is not a lost connection: no login pops up.
         self.login_pending = false;
         let host = session.login().host.clone();
@@ -338,7 +339,7 @@ impl App {
     fn set_session(&mut self, server: Arc<dyn Server>) {
         let login = server.login().clone();
         let user = server.login_user();
-        let old = self.shared.session.lock().unwrap().replace(server);
+        let old = self.shared.session.lock().replace(server);
         if let Some(old) = old {
             self.shared.spawn(async move { old.disconnect().await });
         }
@@ -352,9 +353,9 @@ impl App {
             return;
         }
         self.last_watch = now;
-        let lost = self.shared.session.lock().unwrap().clone().filter(|s| !s.is_connected());
+        let lost = self.shared.session.lock().clone().filter(|s| !s.is_connected());
         if let Some(lost) = lost {
-            *self.shared.session.lock().unwrap() = None;
+            *self.shared.session.lock() = None;
             self.shared.set_status(&tf("The connection to {host} was lost.", &[("host", &lost.login().host)]));
             self.login_pending = true;
         }
@@ -933,7 +934,7 @@ impl App {
     }
 
     fn handle_requests(&mut self) {
-        let requests: Vec<Request> = std::mem::take(&mut *self.shared.requests.lock().unwrap());
+        let requests: Vec<Request> = std::mem::take(&mut *self.shared.requests.lock());
         for request in requests {
             match request {
                 Request::Go(page) => self.go(page),

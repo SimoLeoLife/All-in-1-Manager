@@ -1508,10 +1508,21 @@ pub async fn undo_place(session: &SqlSession, database: &str, undo: &PlaceUndo) 
 }
 
 /// Gives `furni` (no offer sells them yet) an offer each on `page_id`, before the offer `before` (None: at the end):
-/// named after the class name, 3 credits, as a new offer starts. Returns what undoes it (the new offers removed).
-pub async fn place_new_furni(session: &SqlSession, database: &str, furni: &[Furni], page_id: i64, before: Option<i64>) -> Result<PlaceUndo> {
+/// named after the class name, at this price (credits, and points of `points_type`). Returns what undoes it (the new
+/// offers removed).
+#[allow(clippy::too_many_arguments)]
+pub async fn place_new_furni(
+    session: &SqlSession,
+    database: &str,
+    furni: &[Furni],
+    page_id: i64,
+    before: Option<i64>,
+    credits: i64,
+    points: i64,
+    points_type: i64,
+) -> Result<PlaceUndo> {
     let mut inserted = Vec::new();
-    for offer in offers_for(furni, page_id, &[], 3, 0, 0) {
+    for offer in offers_for(furni, page_id, &[], credits, points, points_type) {
         match save_offer(session, database, &offer).await {
             Ok(id) => inserted.push(id),
             Err(error) => {
@@ -1711,6 +1722,73 @@ pub async fn save_furni(session: &SqlSession, database: &str, id: i64, changes: 
     save_row(session, database, "items_base", id, changes).await
 }
 
+// ---- Page texts: the HTML Octane and the gameserver both show ------------------------------------------------
+
+/// The catalog_pages columns that hold HTML text (shown in the client through Octane's SanitizeHtml).
+pub const PAGE_TEXT_COLUMNS: &[&str] = &["page_text1", "page_text2", "page_text_details", "page_text_teaser"];
+
+/// The tags both allow: Octane's SanitizeHtml (DOMPurify) and the gameserver's catalogue admin (Jsoup safelist).
+pub const PAGE_HTML_TAGS: &[&str] = &["b", "i", "u", "br", "span", "div", "p", "a", "strong", "em", "img"];
+
+/// The inline styles Octane keeps in these texts: text formatting only.
+pub const PAGE_HTML_STYLES: &[&str] = &["color", "background-color", "font-weight", "font-style", "font-size", "text-decoration", "text-align"];
+
+/// A style with only the text properties, never a url() or expression() (Octane's textOnlyStyle).
+pub fn text_only_style(style: &str) -> String {
+    style
+        .split(';')
+        .map(str::trim)
+        .filter(|declaration| {
+            let Some((property, value)) = declaration.split_once(':') else { return false };
+            let value = value.to_lowercase();
+            PAGE_HTML_STYLES.contains(&property.trim().to_lowercase().as_str()) && !value.contains("url(") && !value.contains("expression(")
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// A relative link the gameserver keeps: only a #fragment.
+fn fragment_only(url: &str) -> Option<std::borrow::Cow<'_, str>> {
+    url.starts_with('#').then_some(std::borrow::Cow::Borrowed(url))
+}
+
+/// The page text with only what Octane and the gameserver both let through: their 11 tags; href, target, class and
+/// style on links, src, alt, class and style on images, class and style elsewhere; links to http(s), mailto, #... or
+/// event:... (a hotel link; the others always in a new tab); images from http(s) only (Octane drops data:); styles with text properties only. Scripts,
+/// event handlers (onclick ...), forms, frames and every other tag or attribute are taken out; their text stays.
+pub fn safe_page_html(html: &str) -> String {
+    use std::borrow::Cow;
+    use std::collections::{HashMap, HashSet};
+    let tags: HashSet<&str> = PAGE_HTML_TAGS.iter().copied().collect();
+    let mut tag_attributes: HashMap<&str, HashSet<&str>> = HashMap::new();
+    tag_attributes.insert("a", ["href", "target"].into_iter().collect());
+    tag_attributes.insert("img", ["src", "alt"].into_iter().collect());
+    ammonia::Builder::empty()
+        .tags(tags)
+        .tag_attributes(tag_attributes)
+        .generic_attributes(["class", "style"].into_iter().collect())
+        // event: is a hotel link (event:catalog/open/rares, event:habbopages/...): Octane opens it in the client on
+        // the layouts that use SanitizeHtmlWithInternalLinks (single bundle, info pages, trophies ...).
+        .url_schemes(["http", "https", "mailto", "event"].into_iter().collect())
+        // The gameserver keeps no relative link but a #fragment.
+        .url_relative(ammonia::UrlRelative::Custom(Box::new(fragment_only)))
+        .link_rel(None)
+        .attribute_filter(|element, attribute, value| match (element, attribute) {
+            (_, "style") => {
+                let kept = text_only_style(value);
+                (!kept.is_empty()).then_some(Cow::Owned(kept))
+            }
+            ("a", "target") => Some(Cow::Borrowed("_blank")),
+            ("img", "src") => {
+                let lower = value.trim().to_lowercase();
+                (lower.starts_with("http://") || lower.starts_with("https://")).then(|| Cow::Owned(value.trim().to_string()))
+            }
+            _ => Some(Cow::Owned(value.to_string())),
+        })
+        .clean(html)
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1760,6 +1838,26 @@ mod tests {
         assert_eq!(params, vec![SqlValue::Text("1".into()), SqlValue::Null, SqlValue::Int(7)]);
         let (sql, _) = update_statement("hotel", "catalog_items", 9, &[("cost_credits".into(), Some("25".into()))]);
         assert_eq!(sql, "UPDATE `hotel`.catalog_items SET `cost_credits` = ? WHERE id = ?");
+    }
+
+    #[test]
+    fn page_texts_keep_only_the_safe_html() {
+        assert_eq!(safe_page_html("<b onclick=\"steal()\">Hi</b><script>alert(1)</script>"), "<b>Hi</b>");
+        assert_eq!(safe_page_html("<a href=\"javascript:alert(1)\">x</a>"), "<a>x</a>");
+        assert_eq!(safe_page_html("<a href=\"https://hotel.nl\" target=\"_top\">x</a>"), "<a href=\"https://hotel.nl\" target=\"_blank\">x</a>");
+        assert_eq!(safe_page_html("<a href=\"#top\">up</a> <a href=\"/page\">rel</a>"), "<a href=\"#top\">up</a> <a>rel</a>");
+        assert_eq!(safe_page_html("<a href=\"event:catalog/open/rares\">Rares</a>"), "<a href=\"event:catalog/open/rares\">Rares</a>", "a hotel link stays");
+        assert_eq!(safe_page_html("<img src=\"event:x\">"), "<img>", "an image never comes from event:");
+        assert_eq!(
+            safe_page_html("<span style=\"color: red; position: fixed; inset: 0; background-color: url(x)\">t</span>"),
+            "<span style=\"color: red\">t</span>",
+            "an overlay or a tracking image through style is taken out"
+        );
+        assert_eq!(safe_page_html("<img src=\"data:image/png;base64,AA\" alt=\"a\"><img src=\"https://hotel.nl/a.png\">"), "<img alt=\"a\"><img src=\"https://hotel.nl/a.png\">");
+        assert_eq!(safe_page_html("<table><tr><td>cell</td></tr></table><iframe src=\"x\"></iframe>"), "cell");
+        assert_eq!(safe_page_html("<p class=\"big\">A<br>B &amp; C</p>"), "<p class=\"big\">A<br>B &amp; C</p>");
+        assert_eq!(safe_page_html("Plain & simple"), "Plain &amp; simple");
+        assert_eq!(text_only_style("font-weight: bold;color:#fff;; width: 100%"), "font-weight: bold; color:#fff");
     }
 
     #[test]

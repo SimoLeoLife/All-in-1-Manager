@@ -114,7 +114,7 @@ fn newest(releases: Vec<GithubRelease>) -> Option<Release> {
             is_newer(version).then(|| (parsed, version.to_string(), r.body.clone().unwrap_or_default()))
         })
         .collect();
-    changes.sort_by(|a, b| b.0.cmp(&a.0));
+    changes.sort_by_key(|c| std::cmp::Reverse(c.0));
     let changes: Vec<(String, String)> = changes.into_iter().map(|(_, version, notes)| (version, notes)).collect();
     releases
         .into_iter()

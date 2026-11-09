@@ -124,7 +124,7 @@ pub fn classify(facts: &Facts) -> Vec<Line> {
         lines.push(line(status, t("Disk"), detail, None));
     }
     if let (Some(total), Some(available)) = (facts.memory_total_bytes, facts.memory_available_bytes) {
-        let percent = if total > 0 { available * 100 / total } else { 100 };
+        let percent = (available * 100).checked_div(total).unwrap_or(100);
         let detail = tf("{available} of {total} free.", &[("available", &size(available)), ("total", &size(total))]);
         lines.push(line(if percent < 10 { Status::Warning } else { Status::Ok }, t("Memory"), detail, None));
     }

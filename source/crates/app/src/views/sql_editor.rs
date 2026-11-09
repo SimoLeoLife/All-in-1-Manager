@@ -66,7 +66,8 @@ struct TableRef {
 }
 
 enum ResultContent {
-    Grid(Grid),
+    /// Boxed: a Grid holds the whole result set, and every tab in `results` would otherwise be that big.
+    Grid(Box<Grid>),
     Messages(String),
 }
 
@@ -615,7 +616,7 @@ impl Ctl {
             number += 1;
             let header = text::result_header(number, result.rows.len(), result.truncated);
             let grid = s.grid(result, false, false);
-            tabs.push(ResultTab { header, content: ResultContent::Grid(grid) });
+            tabs.push(ResultTab { header, content: ResultContent::Grid(Box::new(grid)) });
         }
         let first = messages.lines().next().unwrap_or_default().to_string();
         let header = if run.error.is_none() { t("Messages") } else { t("Messages ⚠") };

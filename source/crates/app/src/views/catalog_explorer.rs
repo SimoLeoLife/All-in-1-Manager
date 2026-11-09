@@ -735,7 +735,7 @@ impl Ctl {
             match (furni, offers) {
                 (Ok(furni), Ok(offers)) => {
                     let mut list = catalog_admin::unoffered_furni(&furni, &offers);
-                    list.sort_by(|a, b| a.item_name.to_lowercase().cmp(&b.item_name.to_lowercase()));
+                    list.sort_by_key(|a| a.item_name.to_lowercase());
                     s.unoffered = Some(list);
                 }
                 (Err(error), _) | (_, Err(error)) => s.status = Status { text: error.to_string(), error: true },
@@ -1621,10 +1621,13 @@ fn navigation(ui: &mut egui::Ui, ctx: &egui::Context, s: &mut State, images: &mu
                 } else if response.clicked() {
                     let root = s.root_of(id);
                     let pane = &mut s.panes[index];
-                    if has_children && (pane.page == Some(id) || !pane.expanded.contains(&id)) {
-                        if !pane.expanded.insert(id) && pane.page == Some(id) {
-                            pane.expanded.remove(&id);
-                        }
+                    // Clicking the page that is already open, or a page that is not expanded yet, toggles it.
+                    if has_children
+                        && (pane.page == Some(id) || !pane.expanded.contains(&id))
+                        && !pane.expanded.insert(id)
+                        && pane.page == Some(id)
+                    {
+                        pane.expanded.remove(&id);
                     }
                     pane.page = Some(id);
                     pane.selected.clear();

@@ -4,14 +4,17 @@
 //! Each table is described by an `aio_remote::content_admin::TableSpec`; the list, form, checks and statements all
 //! come from it. Every tab says how the hotel picks the change up (a hotel command, or a restart of the emulator).
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use aio_remote::content_admin::{
     self, CurrencyTotal, Field, FieldKind, Row, Setting, TableSpec, ACHIEVEMENT_CATEGORIES, BADGE_PART_TYPES, DAILY_REWARD_TYPES, GOAL_TYPES, PET_SOUND_TYPES,
 };
+use aio_remote::discount_rules::{self, Problem as DiscountProblem};
+use aio_remote::rcon;
 use aio_remote::sql_session::SqlSession;
 use aio_remote::Server;
 use eframe::egui::{self, RichText};
+use parking_lot::Mutex;
 
 use super::sql_editor::login::{Login, Prompt};
 use super::sql_editor::text;
@@ -548,9 +551,10 @@ enum Tab {
     ChatBubbles,
     Calendars,
     Currencies,
+    Discounts,
 }
 
-const TABS: [Tab; 12] = [
+const TABS: [Tab; 13] = [
     Tab::Achievements,
     Tab::DailyTasks,
     Tab::Quests,
@@ -563,6 +567,7 @@ const TABS: [Tab; 12] = [
     Tab::ChatBubbles,
     Tab::Calendars,
     Tab::Currencies,
+    Tab::Discounts,
 ];
 
 impl Tab {
@@ -579,7 +584,7 @@ impl Tab {
             Tab::BadgeParts => Some(Kind::BadgeParts),
             Tab::ChatBubbles => Some(Kind::ChatBubbles),
             Tab::Calendars => Some(Kind::Calendars),
-            Tab::Currencies => None,
+            Tab::Currencies | Tab::Discounts => None,
         }
     }
 
@@ -597,14 +602,32 @@ impl Tab {
             Tab::ChatBubbles => t("Chat bubbles"),
             Tab::Calendars => t("Calendar"),
             Tab::Currencies => t("Currencies"),
+            Tab::Discounts => t("Bulk discount"),
         }
     }
 
-    /// How the hotel loads the tab's changes.
+    /// The `reloadcontent` target that loads the tab's changes in the running hotel.
+    fn reload_target(self) -> &'static str {
+        match self {
+            Tab::Achievements => "achievements",
+            Tab::DailyTasks => "dailytasks",
+            Tab::Quests => "quests",
+            Tab::Polls => "polls",
+            Tab::PublicRooms | Tab::RoomCategories => "navigator",
+            Tab::Pets | Tab::PetCommands => "petdata",
+            Tab::BadgeParts => "guildparts",
+            Tab::ChatBubbles => "chatbubbles",
+            Tab::Calendars => "calendar",
+            Tab::Currencies => "config",
+            Tab::Discounts => "discounts",
+        }
+    }
+
+    /// How the hotel loads the tab's changes without the Reload button (an emulator without `reloadcontent`).
     fn reload_note(self) -> &'static str {
         match self {
             Tab::Achievements => t("The emulator loads achievements when it starts: type :update_achievements in the hotel (or restart the emulator) to load the changes."),
-            Tab::DailyTasks | Tab::Quests => t("The emulator loads quests and daily tasks only when it starts: restart the emulator to load the changes."),
+            Tab::DailyTasks | Tab::Quests => t("Press Reload in the hotel to load the changes, or restart the emulator."),
             Tab::Polls => t("Type :update_polls in the hotel (or restart the emulator) to load the changes."),
             Tab::PublicRooms | Tab::RoomCategories => t("Type :update_navigator in the hotel (or restart the emulator) to load the changes."),
             Tab::Pets | Tab::PetCommands => t("Type :update_pet_data in the hotel (or restart the emulator) to load the changes."),
@@ -612,6 +635,7 @@ impl Tab {
             Tab::ChatBubbles => t("Type :update_chat_bubbles in the hotel (or restart the emulator) to load the changes."),
             Tab::Calendars => t("Type :update_calendar in the hotel (or restart the emulator) to load the changes."),
             Tab::Currencies => t("Type :update_config in the hotel (or restart the emulator) to load the changes."),
+            Tab::Discounts => t("Type :update_config and then :update_catalog in the hotel (or restart the emulator) to load the changes."),
         }
     }
 }
@@ -641,6 +665,10 @@ struct State {
     settings: Option<Vec<Setting>>,
     setting_edits: Vec<String>,
     totals: Vec<CurrencyTotal>,
+    /// The bulk discount settings as stored and as edited (None until loaded), and those the database has no row for.
+    discount_stored: [String; 5],
+    discount_edits: Option<[String; 5]>,
+    discount_missing: Vec<&'static str>,
     /// Raised when the session closes: an older task changes nothing.
     generation: u64,
     session: Option<Arc<SqlSession>>,
@@ -692,8 +720,8 @@ struct Ctl {
 }
 
 impl Ctl {
-    fn lock(&self) -> std::sync::MutexGuard<'_, State> {
-        self.state.lock().unwrap()
+    fn lock(&self) -> parking_lot::MutexGuard<'_, State> {
+        self.state.lock()
     }
 
     fn with<R>(&self, generation: u64, change: impl FnOnce(&mut State) -> R) -> Option<R> {
@@ -806,6 +834,7 @@ impl Ctl {
     async fn load_tab(&self, tab: Tab) {
         match tab.kind() {
             Some(kind) => self.load(kind, None).await,
+            None if tab == Tab::Discounts => self.load_discounts().await,
             None => self.load_currencies().await,
         }
     }
@@ -850,6 +879,34 @@ impl Ctl {
                 Box::pin(self.load(*sub, None)).await;
             }
         }
+    }
+
+    /// Loads the tab's content again in the running hotel (RCON `reloadcontent`), as its `:update_*` command does.
+    async fn reload_hotel(self) {
+        let Some(server) = self.shared.session() else { return };
+        let (generation, tab) = {
+            let mut state = self.lock();
+            if state.busy {
+                return;
+            }
+            state.busy = true;
+            (state.generation, state.tab)
+        };
+        let answer = rcon::send(&*server, &rcon::reload_content_request(tab.reload_target())).await;
+        self.with(generation, |s| {
+            s.busy = false;
+            match answer {
+                Ok(answer) if answer.ok() => s.ok(tf("{name}: loaded again in the hotel.", &[("name", tab.label())])),
+                Ok(answer) if rcon::is_unknown_command(&answer) => {
+                    s.error(tf("This emulator is older and cannot reload from here. {reload}", &[("reload", tab.reload_note())]))
+                }
+                Ok(answer) => {
+                    let message = if answer.message.is_empty() { tf("status {status}", &[("status", &answer.status.to_string())]) } else { answer.message };
+                    s.error(tf("The emulator refused: {message}", &[("message", &message)]))
+                }
+                Err(error) => s.error(error.to_string()),
+            }
+        });
     }
 
     /// Saves the row shown (adds it when it is new) and loads the table again.
@@ -973,6 +1030,50 @@ impl Ctl {
         });
     }
 
+    async fn load_discounts(&self) {
+        let Some((generation, session, database)) = self.session() else { return };
+        self.with(generation, |s| s.busy = true);
+        let loaded = discount_rules::load(&session, &database).await;
+        self.with(generation, |s| {
+            s.busy = false;
+            match loaded {
+                Ok((values, missing)) => {
+                    s.discount_stored = values.clone();
+                    s.discount_edits = Some(values);
+                    s.discount_missing = missing;
+                    s.ok(t("Bulk discount settings loaded.").into());
+                }
+                Err(error) => s.error(error.to_string()),
+            }
+        });
+    }
+
+    async fn save_discounts(self) {
+        let Some((generation, session, database)) = self.session() else { return };
+        let Some(edits) = self.lock().discount_edits.clone() else { return };
+        let rules = match parse_discounts(&edits) {
+            Ok(rules) => rules,
+            Err(problem) => {
+                self.with(generation, |s| s.error(discount_problem_text(problem).into()));
+                return;
+            }
+        };
+        self.with(generation, |s| s.busy = true);
+        let saved = discount_rules::save(&session, &database, &rules).await;
+        self.with(generation, |s| {
+            s.busy = false;
+            match saved {
+                Ok(_) => {
+                    s.discount_stored = rules.values();
+                    s.discount_edits = Some(rules.values());
+                    s.discount_missing.clear();
+                    s.ok(tf("Bulk discount saved. {reload}", &[("reload", Tab::Discounts.reload_note())]));
+                }
+                Err(error) => s.error(error.to_string()),
+            }
+        });
+    }
+
     async fn save_setting(self, index: usize) {
         let Some((generation, session, database)) = self.session() else { return };
         let Some((key, value)) = ({
@@ -1022,7 +1123,7 @@ impl ContentManagerView {
         let Some(server) = shared.session() else { return };
         let id = server_id(&server);
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.state.lock();
             if state.session_for == Some(id) {
                 return;
             }
@@ -1040,6 +1141,8 @@ enum Action {
     Save(Kind),
     Delete(Kind),
     SaveSetting(usize),
+    SaveDiscounts,
+    ReloadHotel,
 }
 
 fn frame(palette: &Palette) -> egui::Frame {
@@ -1058,7 +1161,7 @@ impl View for ContentManagerView {
         let ctx = ui.ctx().clone();
         let mut actions = Vec::new();
         {
-            let mut guard = self.state.lock().unwrap();
+            let mut guard = self.state.lock();
             let s = &mut *guard;
             if let Some(prompt) = s.prompt.as_mut() {
                 if prompt.show(&ctx, palette) {
@@ -1085,16 +1188,18 @@ impl View for ContentManagerView {
                 Action::Save(kind) => ctl.spawn(move |c| c.save(kind)),
                 Action::Delete(kind) => ctl.spawn(move |c| c.delete(kind)),
                 Action::SaveSetting(index) => ctl.spawn(move |c| c.save_setting(index)),
+                Action::SaveDiscounts => ctl.spawn(|c| c.save_discounts()),
+                Action::ReloadHotel => ctl.spawn(|c| c.reload_hotel()),
             }
         }
     }
 
     fn busy(&self) -> bool {
-        self.state.lock().unwrap().busy
+        self.state.lock().busy
     }
 
     fn session_changed(&mut self, shared: &Shared) {
-        self.state.lock().unwrap().close(shared);
+        self.state.lock().close(shared);
     }
 }
 
@@ -1131,6 +1236,7 @@ fn body(ui: &mut egui::Ui, palette: &Palette, s: &mut State, actions: &mut Vec<A
                 s.sub_table = 0;
                 let loaded = match tab.kind() {
                     Some(kind) => s.tables[kind.index()].rows.is_some(),
+                    None if tab == Tab::Discounts => s.discount_edits.is_some(),
                     None => s.settings.is_some(),
                 };
                 if !loaded && s.session.is_some() {
@@ -1140,11 +1246,21 @@ fn body(ui: &mut egui::Ui, palette: &Palette, s: &mut State, actions: &mut Vec<A
         }
     });
     ui.add_space(2.0);
-    widgets::muted(ui, palette, s.tab.reload_note(), 12.0);
+    ui.horizontal_wrapped(|ui| {
+        // RCON reloadcontent: the tab's :update_* command, without being logged in to the hotel.
+        if ui.add_enabled(s.session.is_some() && !s.busy, small(t("Reload in the hotel"))).clicked() {
+            actions.push(Action::ReloadHotel);
+        }
+        widgets::muted(ui, palette, s.tab.reload_note(), 12.0);
+    });
     ui.add_space(6.0);
     let Some(kind) = s.tab.kind() else {
         egui::CentralPanel::default().frame(frame(palette)).show_inside(ui, |ui| {
-            egui::ScrollArea::vertical().id_salt("content-currencies").auto_shrink([false, false]).show(ui, |ui| currencies(ui, palette, s, actions));
+            if s.tab == Tab::Discounts {
+                egui::ScrollArea::vertical().id_salt("content-discounts").auto_shrink([false, false]).show(ui, |ui| discounts(ui, palette, s, actions));
+            } else {
+                egui::ScrollArea::vertical().id_salt("content-currencies").auto_shrink([false, false]).show(ui, |ui| currencies(ui, palette, s, actions));
+            }
         });
         return;
     };
@@ -1429,6 +1545,111 @@ fn currencies(ui: &mut egui::Ui, palette: &Palette, s: &mut State, actions: &mut
     });
 }
 
+fn parse_discounts(edits: &[String; 5]) -> Result<discount_rules::Rules, DiscountProblem> {
+    discount_rules::Rules::parse(&edits[0], &edits[1], &edits[2], &edits[3], &edits[4])
+}
+
+fn discount_problem_text(problem: DiscountProblem) -> &'static str {
+    match problem {
+        DiscountProblem::MaxItems => t("Most at once: a whole number from 1 to 1000."),
+        DiscountProblem::BatchSize => t("Batch size: a whole number from 0 to 1000 (0 turns the discount off)."),
+        DiscountProblem::FreePerBatch => t("Free per batch: a whole number from 0 to one less than the batch size."),
+        DiscountProblem::BonusMinimum => t("Bonus from: a whole number from 0 to 1000."),
+        DiscountProblem::Thresholds => t("Extra free item at: amounts from 1 to 1000, separated by ;."),
+    }
+}
+
+/// The steps shown in the preview.
+const DISCOUNT_PREVIEW_ROWS: usize = 30;
+
+fn discounts(ui: &mut egui::Ui, palette: &Palette, s: &mut State, actions: &mut Vec<Action>) {
+    let busy = s.busy || s.session.is_none();
+    let Some(edits) = s.discount_edits.as_mut() else {
+        widgets::muted(ui, palette, t("Not loaded yet."), 12.5);
+        return;
+    };
+    ui.label(widgets::title_text(t("Bulk discount"), 17.0));
+    widgets::muted(
+        ui,
+        palette,
+        t("Buying several of one offer at once makes some of them free, as in AIR. The client shows the price with these rules and the emulator charges the same. An offer gets it only when have_offer is on in catalog_items."),
+        12.0,
+    );
+    ui.add_space(6.0);
+    let labels = [
+        (t("Most at once"), t("The most of one offer bought in one purchase (1 to 1000).")),
+        (t("Batch size"), t("How many make a batch; 0 turns the discount off.")),
+        (t("Free per batch"), t("Free items for each full batch; fewer than the batch size.")),
+        (t("Bonus from"), t("Full batches before the bonus: from then on, one short of the next batch and each batch above it give one more.")),
+        (t("Extra free item at"), t("Amounts that each give one more free item, separated by ; (may be empty).")),
+    ];
+    egui::Grid::new("content-discounts").num_columns(3).spacing([12.0, 6.0]).show(ui, |ui| {
+        for (i, ((label, hint), (key, _))) in labels.iter().zip(discount_rules::KEYS).enumerate() {
+            ui.label(RichText::new(*label).size(12.5)).on_hover_text(*hint);
+            ui.add_sized([160.0, FIELD_HEIGHT], egui::TextEdit::singleline(&mut edits[i]).char_limit(200));
+            ui.label(RichText::new(key).size(11.5).monospace().color(palette.subtle));
+            ui.end_row();
+        }
+    });
+    let parsed = parse_discounts(edits);
+    let changed = edits.iter().zip(&s.discount_stored).any(|(edit, stored)| edit.trim() != stored) || !s.discount_missing.is_empty();
+    ui.add_space(6.0);
+    ui.horizontal_wrapped(|ui| {
+        if ui.add_enabled(changed && parsed.is_ok() && !busy, small(t("Save"))).clicked() {
+            actions.push(Action::SaveDiscounts);
+        }
+        match &parsed {
+            Err(problem) => {
+                ui.label(RichText::new(discount_problem_text(*problem)).size(11.5).color(palette.error_text));
+            }
+            Ok(_) if changed => {
+                ui.label(RichText::new(t("Not saved yet.")).size(11.5).color(palette.warning_text));
+            }
+            Ok(_) => {}
+        }
+    });
+    if !s.discount_missing.is_empty() {
+        widgets::muted(
+            ui,
+            palette,
+            &tf("Not in emulator_settings yet, so the emulator uses its default: {keys}. Save adds them.", &[("keys", &s.discount_missing.join(", "))]),
+            12.0,
+        );
+    }
+    let Ok(rules) = parsed else { return };
+    ui.add_space(12.0);
+    ui.label(widgets::title_text(t("What a buyer pays"), 15.0));
+    ui.add_space(4.0);
+    if let Some(amount) = rules.first_free_amount() {
+        ui.label(
+            RichText::new(tf("Buying {amount} at once costs nothing with these rules. Lower Free per batch or raise Bonus from.", &[("amount", &amount.to_string())]))
+                .size(12.5)
+                .color(palette.error_text),
+        );
+    }
+    let steps = rules.steps();
+    if steps.is_empty() {
+        widgets::muted(ui, palette, t("No discount: every item is paid for."), 12.5);
+        return;
+    }
+    widgets::muted(ui, palette, t("Each amount at which one more item becomes free:"), 12.0);
+    egui::Grid::new("content-discount-steps").num_columns(3).striped(true).spacing([24.0, 3.0]).show(ui, |ui| {
+        for heading in [t("Bought"), t("Free"), t("Paid for")] {
+            ui.label(RichText::new(heading).size(12.0).strong());
+        }
+        ui.end_row();
+        for (amount, free, paid) in steps.iter().take(DISCOUNT_PREVIEW_ROWS) {
+            ui.label(amount.to_string());
+            ui.label(free.to_string());
+            ui.label(paid.to_string());
+            ui.end_row();
+        }
+    });
+    if steps.len() > DISCOUNT_PREVIEW_ROWS {
+        widgets::muted(ui, palette, &tf("And {count} more steps up to {max}.", &[("count", &(steps.len() - DISCOUNT_PREVIEW_ROWS).to_string()), ("max", &rules.max_items.to_string())]), 12.0);
+    }
+}
+
 /// The names the settings give currency types: `seasonal.currency.<name> = <type>`.
 fn currency_names(settings: &[Setting]) -> Vec<(i64, String)> {
     settings
@@ -1537,7 +1758,7 @@ mod tests {
         bubble.values[0] = "12".into();
         assert!(Kind::ChatBubbles.problem(&bubble, &[], None).is_some(), "the client's own styles are below 46");
         let taken = stored(&CHAT_BUBBLES, 1, &["200", "SHOW_MESSAGE_RED", "", "1", "0", "0"]);
-        assert_eq!(next_number(&CHAT_BUBBLES, &[taken.clone()], &bubble, "type", 46, None), 201);
+        assert_eq!(next_number(&CHAT_BUBBLES, std::slice::from_ref(&taken), &bubble, "type", 46, None), 201);
         bubble.values[0] = "200".into();
         assert!(Kind::ChatBubbles.problem(&bubble, &[taken], None).is_some(), "200 is there");
 

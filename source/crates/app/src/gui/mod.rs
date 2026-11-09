@@ -59,6 +59,7 @@ pub enum Page {
     AssetTools,
     AssetExplorer,
     SqlEditor,
+    CatalogRip,
     CatalogManager,
     CatalogExplorer,
     BuildersExplorer,
@@ -241,6 +242,7 @@ pub struct App {
     history: views::history::HistoryView,
     about: views::about::AboutView,
     plugins: views::plugins::PluginsView,
+    catalog_rip: views::catalog_rip::CatalogRipView,
     dashboard: views::dashboard::Dashboard,
     /// The connection was lost: the login opens again as soon as nothing runs any more.
     login_pending: bool,
@@ -294,6 +296,7 @@ impl App {
             history: views::history::HistoryView::new(&shared),
             about: views::about::AboutView::new(&shared),
             plugins: views::plugins::PluginsView,
+            catalog_rip: views::catalog_rip::CatalogRipView::new(&shared),
             dashboard: views::dashboard::Dashboard::new(&shared),
             shared,
             login_pending: false,
@@ -323,6 +326,7 @@ impl App {
             || self.hotel_view.busy()
             || self.gamedata.busy()
             || self.settings.busy()
+            || self.catalog_rip.busy()
             || views::plugins::busy()
     }
 
@@ -663,6 +667,10 @@ impl App {
             Page::History => (t("History").into(), t("What ran on which server, with its log: every install step and tool.").into()),
             Page::About => (t("About").into(), "All-in-1 Manager".into()),
             Page::Plugins => (t("Plugins").into(), t("Switch the optional parts of the program on or off, and download the data they need.").into()),
+            Page::CatalogRip => (
+                t("Catalogue ripper").into(),
+                t("Copies the catalogue of Habbo or a retro hotel through G-Earth, as files and ready to import.").into(),
+            ),
             Page::Settings => (t("Settings").into(), t("The look, the settings backup, your servers and default SSH key, and your own SSH keys.").into()),
             Page::Dashboard => (t("Dashboard").into(), t("Set up a complete hotel server over SSH.").into()),
             Page::Addons => (t("Addons").into(), t("Everything that goes on top of a finished server: pick one.").into()),
@@ -718,6 +726,7 @@ impl App {
                             | Page::RemoveCrowdSec
                             | Page::DefaultCatalog
                             | Page::SqlEditor
+                            | Page::CatalogRip
                     ),
                     Page::Tools => matches!(current, Page::Tools | Page::ServerStatus | Page::EmulatorMonitor | Page::Terminal | Page::Doctor),
                     other => current == other,
@@ -841,7 +850,7 @@ impl App {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     let wizard_status = match self.page {
-                        Page::Dashboard | Page::Tools | Page::Settings | Page::About | Page::AssetExplorer | Page::GetAssets | Page::RetroAssets | Page::AssetTools | Page::SqlEditor | Page::CatalogManager | Page::CatalogExplorer | Page::BuildersExplorer | Page::Content | Page::Logs | Page::Players | Page::Housekeeping | Page::HotelView | Page::Gamedata | Page::Debug | Page::History | Page::Plugins => None,
+                        Page::Dashboard | Page::Tools | Page::Settings | Page::About | Page::AssetExplorer | Page::GetAssets | Page::RetroAssets | Page::AssetTools | Page::SqlEditor | Page::CatalogManager | Page::CatalogExplorer | Page::BuildersExplorer | Page::Content | Page::Logs | Page::Players | Page::Housekeeping | Page::HotelView | Page::Gamedata | Page::Debug | Page::History | Page::Plugins | Page::CatalogRip => None,
                         _ => Some(()),
                     }
                     .and_then(|_| self.wizards.all().into_iter().find(|w| w.is_busy()).map(|w| w.status()))
@@ -969,6 +978,16 @@ impl App {
                 scroll(ui, |ui| open = self.plugins.show(ui, palette, &shared));
                 if let Some(page) = open {
                     self.navigate(page);
+                }
+            }
+            Page::CatalogRip => {
+                let mut click = None;
+                scroll(ui, |ui| click = self.catalog_rip.show(ui, palette, &shared));
+                if let Some(views::catalog_rip::Click::Import(path)) = click {
+                    self.go(Page::CatalogManager);
+                    if self.page == Page::CatalogManager {
+                        self.catalog.import_file(path);
+                    }
                 }
             }
             Page::Addons => {

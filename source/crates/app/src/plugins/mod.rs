@@ -67,6 +67,13 @@ pub static PLUGINS: &[Plugin] = &[
         pack: Some(&packs::CATALOG),
     },
     Plugin {
+        id: "catalog-rip",
+        title: n("Catalogue ripper"),
+        description: n("Copies the catalogue of Habbo or a retro hotel through G-Earth, ready to import."),
+        pages: &[Page::CatalogRip],
+        pack: None,
+    },
+    Plugin {
         id: "sql-editor",
         title: "SQL Editor",
         description: n("Browse and edit the hotel's tables, run queries, export to CSV."),

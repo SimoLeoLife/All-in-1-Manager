@@ -126,12 +126,12 @@ pub(crate) fn show(ctx: &egui::Context, shared: &Shared, prompt: &mut UpdateProm
                     match &state {
                         Download::Asking => {}
                         Download::Running { done, total } => {
-                            let bar = if *total > 0 {
-                                egui::ProgressBar::new((*done as f32 / *total as f32).clamp(0.0, 1.0))
+                            if *total > 0 {
+                                let done = (*done as f32 / *total as f32).clamp(0.0, 1.0);
+                                ui.add(egui::ProgressBar::new(done).desired_height(6.0).fill(Fixed::brand()));
                             } else {
-                                egui::ProgressBar::new(0.0).animate(true)
-                            };
-                            ui.add(bar.desired_height(6.0).fill(Fixed::brand()));
+                                widgets::indeterminate_bar(ui, 6.0, Fixed::brand());
+                            }
                             let status = if *done == 0 && *total == 0 {
                                 tf("Downloading {name} ...", &[("name", update::ASSET_NAME)])
                             } else {

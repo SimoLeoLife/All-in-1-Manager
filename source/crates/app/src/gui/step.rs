@@ -381,7 +381,7 @@ fn show_intro(ui: &mut egui::Ui, palette: &Palette, step: &dyn InstallStep, step
 pub fn show_run(ui: &mut egui::Ui, palette: &Palette, step_ui: &StepUi, log_height: f32) {
     let mut state = step_ui.state();
     if state.busy {
-        ui.add(egui::ProgressBar::new(0.0).animate(true).desired_height(3.0).fill(super::theme::Fixed::brand()));
+        widgets::indeterminate_bar(ui, 3.0, super::theme::Fixed::brand());
     } else {
         ui.add_space(3.0);
     }

@@ -136,6 +136,7 @@ dependencies = [
  "image",
  "parking_lot",
  "reqwest",
+ "parking_lot",
  "rfd",
  "serde",
  "serde_json",

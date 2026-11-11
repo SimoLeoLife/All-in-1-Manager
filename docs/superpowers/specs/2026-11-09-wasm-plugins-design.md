@@ -1,6 +1,6 @@
 # External plugins (WebAssembly): design
 
-Date: 2026-11-09. Status: draft, to be approved by the owner (SimoLeoLife).
+Date: 2026-11-09. Status: approved by the owner (SimoLeoLife), 2026-11-11.
 
 ## Intent
 
@@ -137,15 +137,16 @@ developers too**, published through an **approved** index.
   user clicks Update (and accepts new permissions, if any).
 - **Dev mode.** A setting in normal release builds ("Developer mode"), off by default, that loads a plugin from a
   folder with reload; it carries the same red "not verified" warning and consent as installing from a file.
-- **Milestones, safe without duckietm's answer.** Runtime + API + install from file + dev mode first, with the index's
+- **Milestones.** Runtime + API + install from file + dev mode first, with the index's
   trust anchor (public key, index URL) kept swappable; the official index, signing and the "Available" tab come once
   the trust setup is agreed.
 
-## Open question for the owner
+## Answered by the owner
 
-1. **duckietm.** Has he agreed to plugins and to the index's public key living in his Manager, and does this work go
-   to `duckietm/All-in-1-Manager` as pull requests or stay in the owner's fork? Who creates the GitHub organization and
-   its protected CI environment?
+1. **duckietm agrees** to external plugins and to the index's public key in the Manager. The work goes to
+   `duckietm/All-in-1-Manager` as pull requests (towards `dev`), from branches of the fork `SimoLeoLife/All-in-1-Manager`.
+   The GitHub organization for the index and its protected CI environment are created by the owner and duckietm (a
+   person has to do it); the code keeps the trust anchor configurable until the real public key exists.
 
 ## Left to the builder
 
